@@ -1,0 +1,27 @@
+package carrs.model;
+
+import com.mysql.cj.x.protobuf.MysqlxDatatypes;
+
+public class StaffMember {
+    private final int id;
+    private final String name;
+    private final Role role;
+
+    public StaffMember(int id, String name, Role role) {
+        this.id = id;
+        this.name = name;
+        this.role = role;
+    }
+
+    public int getId() {
+        return id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public Role getRole() {
+        return role;
+    }
+}
