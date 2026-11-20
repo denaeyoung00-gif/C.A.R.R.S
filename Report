@@ -1,0 +1,38 @@
+import java.lang; 
+import java.util;
+import java.io;
+import java.time;
+
+abstract class Report{
+    private String reportID,title , generatedBy;
+    private Date dateGenerated;
+    private  ReportCriteria criteria; 
+
+    public String getReportId ( string reportID){ // getter for reportId
+        return reportID;
+    }
+
+    public  String getTitle (string title){ // getter for report title 
+        return title;
+    }
+
+    public string getGeneratedBy ( string generatedBy){ // getter for generatedBy
+        return generatedBy;
+    }
+
+    public  Date getDateGenerated ( Date dateGenerated){//getter for dateGenerated
+        return dateGenerated; 
+    }
+
+    public ReportCriteria getCriteria ( ReportCriteria criteria){ // getter for criteria 
+        return criteria; 
+    }
+
+    public abstract void generate (ReportCriteria criteria){}
+
+    public void display(){
+    }
+
+    public void export( String format){}
+
+}

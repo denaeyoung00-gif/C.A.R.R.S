@@ -1,0 +1,15 @@
+import java.lang; 
+import java.util;
+import java.io;
+import java.time;
+import java.util.List;
+
+public class programReport extends Report{
+
+    private String programID;
+    private int totalApplicants, acceptedCount, rejectedCount ,inProgressCount;
+
+    public void generateBy(String programID){
+
+    }
+}

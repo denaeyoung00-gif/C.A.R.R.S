@@ -1,0 +1,13 @@
+import java.lang; 
+import java.util;
+import java.io;
+import java.time;
+import java.util.List;
+
+public class ApplicationTimelineReport extends Report{
+    private String applicationID;
+    private Date startDate, benefitReceivedDate;
+    private int durationDays;
+
+    public void generateTimeline(String application ID){}
+}
