@@ -26,6 +26,16 @@ public class MySqlCarrsRepository implements CarrsRepository {
         return out;
     }
 
+    @Override public List<StaffMember> findAllStaff() {
+        List<StaffMember> out = new ArrayList<>();
+        try (Connection c = Database.connect(); Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT * FROM staff_member ORDER BY staff_id")) {
+            while (rs.next())
+                out.add(new StaffMember(rs.getInt("staff_id"), rs.getString("name"), Role.valueOf(rs.getString("role"))));
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
+    }
+
     @Override public Programme findProgramme(int id) {
         String sql = "SELECT * FROM programme WHERE programme_id = ?";
         try (Connection c = Database.connect(); PreparedStatement ps = c.prepareStatement(sql)) {
@@ -71,52 +81,63 @@ public class MySqlCarrsRepository implements CarrsRepository {
 
     // ============ Payment & Benefit Management ============
     private static final String INSERT_PAYMENT =
-            "INSERT INTO payment (applicant_id, programme_id, benefit_type, amount, scheduled_date, "
+            "INSERT INTO payment (applicant_id, programme_id, benefit_type, payment_method, amount, scheduled_date, "
           + "distributed_date, status, failure_reason, payee_name, verified, verified_by, verified_at, "
-          + "recorded_by, recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+          + "recorded_by, recorded_at, cheque_scan_path) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
-    @Override public void savePayment(Payment p) {
-        try (Connection c = Database.connect();
-             PreparedStatement ps = c.prepareStatement(INSERT_PAYMENT, Statement.RETURN_GENERATED_KEYS)) {
-            ps.setInt(1, p.getApplicantId());
-            ps.setInt(2, p.getProgrammeId());
-            ps.setString(3, p.getBenefitType().name());
-            ps.setBigDecimal(4, p.getAmount());
-            ps.setDate(5, java.sql.Date.valueOf(p.getScheduledDate()));
-            setDate(ps, 6, p.getDistributedDate());
-            ps.setString(7, p.getStatus().name());
-            ps.setString(8, p.getFailureReason());
-            ps.setString(9, p.getPayeeName());
-            ps.setBoolean(10, p.isVerified());
-            setInteger(ps, 11, p.getVerifiedBy());
-            setDateTime(ps, 12, p.getVerifiedAt());
-            ps.setInt(13, p.getRecordedBy());
-            ps.setTimestamp(14, Timestamp.valueOf(p.getRecordedAt()));
-            ps.executeUpdate();
-            try (ResultSet keys = ps.getGeneratedKeys()) { if (keys.next()) p.setId(keys.getInt(1)); }
+    /** One transaction: the new payment and its audit line are saved together, or neither is. */
+    @Override public void savePayment(Payment p, PaymentAudit audit) {
+        try (Connection c = Database.connect()) {
+            c.setAutoCommit(false);
+            try {
+                try (PreparedStatement ps = c.prepareStatement(INSERT_PAYMENT, Statement.RETURN_GENERATED_KEYS)) {
+                    ps.setInt(1, p.getApplicantId());
+                    ps.setInt(2, p.getProgrammeId());
+                    ps.setString(3, p.getBenefitType().name());
+                    ps.setString(4, p.getPaymentMethod().name());
+                    ps.setBigDecimal(5, p.getAmount());
+                    ps.setDate(6, java.sql.Date.valueOf(p.getScheduledDate()));
+                    setDate(ps, 7, p.getDistributedDate());
+                    ps.setString(8, p.getStatus().name());
+                    ps.setString(9, p.getFailureReason());
+                    ps.setString(10, p.getPayeeName());
+                    ps.setBoolean(11, p.isVerified());
+                    setInteger(ps, 12, p.getVerifiedBy());
+                    setDateTime(ps, 13, p.getVerifiedAt());
+                    ps.setInt(14, p.getRecordedBy());
+                    ps.setTimestamp(15, Timestamp.valueOf(p.getRecordedAt()));
+                    ps.setString(16, p.getChequeScanPath());
+                    ps.executeUpdate();
+                    try (ResultSet keys = ps.getGeneratedKeys()) { if (keys.next()) p.setId(keys.getInt(1)); }
+                }
+                if (audit != null) { audit.setPaymentId(p.getId()); insertAudit(c, audit); }
+                c.commit();
+            } catch (SQLException e) { c.rollback(); throw e; }
         } catch (SQLException e) { throw new RuntimeException(e); }
     }
 
-    /** One transaction: the payment update and all its change records succeed together, or none do. */
-    @Override public void updatePayment(Payment p, List<PaymentChange> changes) {
+    /** One transaction: the payment update, its change records and its audit line succeed together, or none do. */
+    @Override public void updatePayment(Payment p, List<PaymentChange> changes, PaymentAudit audit) {
         try (Connection c = Database.connect()) {
             c.setAutoCommit(false);
             try {
                 try (PreparedStatement ps = c.prepareStatement(
-                        "UPDATE payment SET benefit_type=?, amount=?, scheduled_date=?, distributed_date=?, "
-                      + "status=?, failure_reason=?, payee_name=?, verified=?, verified_by=?, verified_at=? "
-                      + "WHERE payment_id=?")) {
+                        "UPDATE payment SET benefit_type=?, payment_method=?, amount=?, scheduled_date=?, "
+                      + "distributed_date=?, status=?, failure_reason=?, payee_name=?, verified=?, verified_by=?, "
+                      + "verified_at=?, cheque_scan_path=? WHERE payment_id=?")) {
                     ps.setString(1, p.getBenefitType().name());
-                    ps.setBigDecimal(2, p.getAmount());
-                    ps.setDate(3, java.sql.Date.valueOf(p.getScheduledDate()));
-                    setDate(ps, 4, p.getDistributedDate());
-                    ps.setString(5, p.getStatus().name());
-                    ps.setString(6, p.getFailureReason());
-                    ps.setString(7, p.getPayeeName());
-                    ps.setBoolean(8, p.isVerified());
-                    setInteger(ps, 9, p.getVerifiedBy());
-                    setDateTime(ps, 10, p.getVerifiedAt());
-                    ps.setInt(11, p.getId());
+                    ps.setString(2, p.getPaymentMethod().name());
+                    ps.setBigDecimal(3, p.getAmount());
+                    ps.setDate(4, java.sql.Date.valueOf(p.getScheduledDate()));
+                    setDate(ps, 5, p.getDistributedDate());
+                    ps.setString(6, p.getStatus().name());
+                    ps.setString(7, p.getFailureReason());
+                    ps.setString(8, p.getPayeeName());
+                    ps.setBoolean(9, p.isVerified());
+                    setInteger(ps, 10, p.getVerifiedBy());
+                    setDateTime(ps, 11, p.getVerifiedAt());
+                    ps.setString(12, p.getChequeScanPath());
+                    ps.setInt(13, p.getId());
                     ps.executeUpdate();
                 }
                 for (PaymentChange ch : changes) {
@@ -134,12 +155,50 @@ public class MySqlCarrsRepository implements CarrsRepository {
                         try (ResultSet keys = ps.getGeneratedKeys()) { if (keys.next()) ch.setId(keys.getInt(1)); }
                     }
                 }
+                if (audit != null) insertAudit(c, audit);
                 c.commit();
             } catch (SQLException e) {
                 c.rollback();   // undo everything if any step failed
                 throw e;
             }
         } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    @Override public void saveAudit(PaymentAudit audit) {
+        try (Connection c = Database.connect()) { insertAudit(c, audit); }
+        catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    private static void insertAudit(Connection c, PaymentAudit a) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement(
+                "INSERT INTO payment_audit (payment_id, action, details, performed_by, performed_at) VALUES (?,?,?,?,?)",
+                Statement.RETURN_GENERATED_KEYS)) {
+            setInteger(ps, 1, a.getPaymentId());
+            ps.setString(2, a.getAction());
+            ps.setString(3, a.getDetails());
+            ps.setInt(4, a.getPerformedBy());
+            ps.setTimestamp(5, Timestamp.valueOf(a.getPerformedAt()));
+            ps.executeUpdate();
+            try (ResultSet keys = ps.getGeneratedKeys()) { if (keys.next()) a.setId(keys.getInt(1)); }
+        }
+    }
+
+    @Override public List<PaymentAudit> findAuditForApplicant(int applicantId) {
+        String sql = "SELECT a.* FROM payment_audit a JOIN payment p ON p.payment_id = a.payment_id "
+                   + "WHERE p.applicant_id = ? ORDER BY a.audit_id";
+        List<PaymentAudit> out = new ArrayList<>();
+        try (Connection c = Database.connect(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setInt(1, applicantId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int pid = rs.getInt("payment_id");
+                    out.add(new PaymentAudit(rs.getInt("audit_id"), rs.wasNull() ? null : pid,
+                            rs.getString("action"), rs.getString("details"), rs.getInt("performed_by"),
+                            rs.getTimestamp("performed_at").toLocalDateTime()));
+                }
+            }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
     }
 
     @Override public Payment findPayment(int id) {
@@ -213,6 +272,7 @@ public class MySqlCarrsRepository implements CarrsRepository {
         String req = rs.getString("required_fields");
         if (req != null && !req.isBlank())
             for (String f : req.split(",")) p.requires(f.trim());
+        p.paysBenefits(rs.getBoolean("provides_benefits"));
         return p;
     }
 
@@ -230,12 +290,14 @@ public class MySqlCarrsRepository implements CarrsRepository {
         Integer verifiedBy = rs.wasNull() ? null : vb;
         Timestamp vat = rs.getTimestamp("verified_at");
         return new Payment(rs.getInt("payment_id"), rs.getInt("applicant_id"), rs.getInt("programme_id"),
-                BenefitType.valueOf(rs.getString("benefit_type")), rs.getBigDecimal("amount"),
+                BenefitType.valueOf(rs.getString("benefit_type")),
+                PaymentMethod.valueOf(rs.getString("payment_method")), rs.getBigDecimal("amount"),
                 rs.getDate("scheduled_date").toLocalDate(), dist == null ? null : dist.toLocalDate(),
                 PaymentStatus.valueOf(rs.getString("status")), rs.getString("failure_reason"),
                 rs.getString("payee_name"), rs.getBoolean("verified"), verifiedBy,
                 vat == null ? null : vat.toLocalDateTime(),
-                rs.getInt("recorded_by"), rs.getTimestamp("recorded_at").toLocalDateTime());
+                rs.getInt("recorded_by"), rs.getTimestamp("recorded_at").toLocalDateTime(),
+                rs.getString("cheque_scan_path"));
     }
 
     private static void setDate(PreparedStatement ps, int i, LocalDate d) throws SQLException {

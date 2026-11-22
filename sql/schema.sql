@@ -1,3 +1,4 @@
+-- C.A.R.R.S database: structure only. Run this FIRST, then demo_data.sql.
 DROP DATABASE IF EXISTS carrs;
 CREATE DATABASE carrs;
 USE carrs;
@@ -16,11 +17,12 @@ CREATE TABLE applicant (
 );
 
 CREATE TABLE programme (
-  programme_id    INT PRIMARY KEY AUTO_INCREMENT,
-  name            VARCHAR(100) NOT NULL UNIQUE,
-  status          ENUM('UPCOMING','ACTIVE','COMPLETED') NOT NULL,
-  capacity        INT NOT NULL DEFAULT 25,
-  required_fields VARCHAR(255) NOT NULL DEFAULT ''
+  programme_id      INT PRIMARY KEY AUTO_INCREMENT,
+  name              VARCHAR(100) NOT NULL UNIQUE,
+  status            ENUM('UPCOMING','ACTIVE','COMPLETED') NOT NULL,
+  capacity          INT NOT NULL DEFAULT 25,
+  required_fields   VARCHAR(255) NOT NULL DEFAULT '',
+  provides_benefits BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE enrolment (
@@ -35,25 +37,51 @@ CREATE TABLE enrolment (
   FOREIGN KEY (transferred_from) REFERENCES enrolment(enrolment_id)
 );
 
--- ===== sample data =====
-INSERT INTO staff_member (name, role) VALUES
- ('Alexia James','OFFICE_MANAGER'),
- ('Sam Intern','OFFICE_ATTENDANT'),
- ('Office Staff','OFFICE_STAFF'),
- ('Dr Angela Brown-Burke','MEMBER_OF_PARLIAMENT');
+-- ===== Payment and Benefit Management =====
+CREATE TABLE payment (
+  payment_id       INT PRIMARY KEY AUTO_INCREMENT,
+  applicant_id     INT NOT NULL,
+  programme_id     INT NOT NULL,
+  benefit_type     ENUM('TUITION_SUPPORT','EMERGENCY_GRANT','SUMMER_STIPEND','OTHER') NOT NULL,
+  payment_method   ENUM('CHEQUE') NOT NULL,
+  amount           DECIMAL(12,2) NOT NULL,
+  scheduled_date   DATE NOT NULL,
+  distributed_date DATE NULL,
+  status           ENUM('PENDING','PROCESSED','COMPLETED','FAILED') NOT NULL,
+  failure_reason   VARCHAR(255) NULL,
+  payee_name       VARCHAR(150) NULL,
+  verified         BOOLEAN NOT NULL DEFAULT FALSE,
+  verified_by      INT NULL,
+  verified_at      DATETIME NULL,
+  recorded_by      INT NOT NULL,
+  recorded_at      DATETIME NOT NULL,
+  cheque_scan_path VARCHAR(500) NULL,
+  FOREIGN KEY (applicant_id) REFERENCES applicant(applicant_id),
+  FOREIGN KEY (programme_id) REFERENCES programme(programme_id),
+  FOREIGN KEY (verified_by)  REFERENCES staff_member(staff_id),
+  FOREIGN KEY (recorded_by)  REFERENCES staff_member(staff_id)
+);
 
-INSERT INTO programme (name,status,capacity,required_fields) VALUES
- ('Tertiary Scholarship / Education Grant','ACTIVE',25,''),
- ('Seasonal Agricultural Workers Programme (SAWP)','ACTIVE',25,''),
- ('Emergency Assistance / Compassionate Grant','ACTIVE',25,''),
- ('Constituency Summer Employment Programme (SEP)','ACTIVE',25,'');
+CREATE TABLE payment_change (
+  change_id   INT PRIMARY KEY AUTO_INCREMENT,
+  payment_id  INT NOT NULL,
+  field_name  VARCHAR(50)  NOT NULL,
+  old_value   VARCHAR(255) NULL,
+  new_value   VARCHAR(255) NULL,
+  reason      VARCHAR(255) NOT NULL,
+  changed_by  INT NOT NULL,
+  changed_at  DATETIME NOT NULL,
+  FOREIGN KEY (payment_id) REFERENCES payment(payment_id),
+  FOREIGN KEY (changed_by) REFERENCES staff_member(staff_id)
+);
 
-INSERT INTO applicant (name,household_size,contact_number) VALUES
- ('Jane Brown','4','876-555-0101'),
- ('Tom Clarke',NULL,NULL),
- ('Mary Smith','3','876-555-0103');
-
-INSERT INTO enrolment (applicant_id,programme_id,status,enrolled_at) VALUES
- (1,1,'ACTIVE',NOW()),
- (2,3,'ACTIVE',NOW()),
- (3,4,'ACTIVE',NOW());
+CREATE TABLE payment_audit (
+  audit_id     INT PRIMARY KEY AUTO_INCREMENT,
+  payment_id   INT NULL,
+  action       VARCHAR(40)  NOT NULL,
+  details      VARCHAR(500) NOT NULL,
+  performed_by INT NOT NULL,
+  performed_at DATETIME NOT NULL,
+  FOREIGN KEY (payment_id)   REFERENCES payment(payment_id),
+  FOREIGN KEY (performed_by) REFERENCES staff_member(staff_id)
+);

@@ -8,6 +8,7 @@ public interface CarrsRepository {
     // ---- shared (everyone uses these)
     Applicant findApplicant(int applicantId);          // null if none
     List<Applicant> findAllApplicants();
+    List<StaffMember> findAllStaff();                  // the people who can log in
     Programme findProgramme(int programmeId);          // null if none
     Enrolment findEnrolment(int enrolmentId);          // null if none
     List<Enrolment> findEnrolmentsForApplicant(int applicantId);
@@ -15,9 +16,14 @@ public interface CarrsRepository {
     int countLiveEnrolments(int programmeId);
 
     // ---- Payment & Benefit Management
-    void savePayment(Payment payment);                 // sets the new id on 'payment'
-    /** ATOMIC: save the changed payment and its change records together, or neither. */
-    void updatePayment(Payment payment, List<PaymentChange> changes);
+    /** ATOMIC: save the new payment and its audit line together, or neither. Sets the new id on 'payment'. */
+    void savePayment(Payment payment, PaymentAudit audit);
+    /** ATOMIC: save the changed payment, its change records and its audit line together, or none. */
+    void updatePayment(Payment payment, List<PaymentChange> changes, PaymentAudit audit);
+    /** An audit line for an action that changes no payment data (e.g. a cheque was printed). */
+    void saveAudit(PaymentAudit audit);
+    /** Audit trail for every payment of one constituent, oldest first. */
+    List<PaymentAudit> findAuditForApplicant(int applicantId);
     Payment findPayment(int paymentId);                // null if none
     List<Payment> findPaymentsByApplicant(int applicantId);
     /** A payment for the same applicant, programme, benefit and date that is not Failed. */

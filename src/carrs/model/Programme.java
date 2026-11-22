@@ -7,6 +7,7 @@ public class Programme {
     private final int id; private final String name;
     private final ProgrammeStatus status; private final int capacity;
     private final Set<String> requiredFields = new HashSet<>();
+    private boolean providesBenefits = true;   // does this programme pay money or stipends?
     public Programme(int id, String name, ProgrammeStatus status, int capacity) {
         this.id = id; this.name = name; this.status = status; this.capacity = capacity;
     }
@@ -17,5 +18,7 @@ public class Programme {
     public int getCapacity() { return capacity; }
     public Set<String> getRequiredFields() { return requiredFields; }
     public Programme requires(String field) { requiredFields.add(field); return this; }
+    public boolean providesBenefits() { return providesBenefits; }
+    public Programme paysBenefits(boolean value) { this.providesBenefits = value; return this; }
     public boolean isActive() { return status == ProgrammeStatus.ACTIVE; }
 }

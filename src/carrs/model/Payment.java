@@ -9,6 +9,7 @@ public class Payment {
     private final int applicantId;
     private final int programmeId;
     private BenefitType benefitType;
+    private PaymentMethod paymentMethod;     // cheque, bank transfer or cash
     private BigDecimal amount;               // BigDecimal, not double: it is money
     private LocalDate scheduledDate;
     private LocalDate distributedDate;       // null until completed
@@ -20,14 +21,16 @@ public class Payment {
     private LocalDateTime verifiedAt;
     private final int recordedBy;
     private final LocalDateTime recordedAt;
+    private String chequeScanPath;           // scanned copy of the cheque, once uploaded
 
     public Payment(int id, int applicantId, int programmeId, BenefitType benefitType,
-                   BigDecimal amount, LocalDate scheduledDate, LocalDate distributedDate,
+                   PaymentMethod paymentMethod, BigDecimal amount, LocalDate scheduledDate, LocalDate distributedDate,
                    PaymentStatus status, String failureReason, String payeeName,
                    boolean verified, Integer verifiedBy, LocalDateTime verifiedAt,
-                   int recordedBy, LocalDateTime recordedAt) {
+                   int recordedBy, LocalDateTime recordedAt, String chequeScanPath) {
         this.id = id; this.applicantId = applicantId; this.programmeId = programmeId;
-        this.benefitType = benefitType; this.amount = amount;
+        this.benefitType = benefitType; this.paymentMethod = paymentMethod; this.amount = amount;
+        this.chequeScanPath = chequeScanPath;
         this.scheduledDate = scheduledDate; this.distributedDate = distributedDate;
         this.status = status; this.failureReason = failureReason; this.payeeName = payeeName;
         this.verified = verified; this.verifiedBy = verifiedBy; this.verifiedAt = verifiedAt;
@@ -40,6 +43,13 @@ public class Payment {
     public int getProgrammeId() { return programmeId; }
     public BenefitType getBenefitType() { return benefitType; }
     public void setBenefitType(BenefitType benefitType) { this.benefitType = benefitType; }
+    public PaymentMethod getPaymentMethod() { return paymentMethod; }
+    public void setPaymentMethod(PaymentMethod m) { this.paymentMethod = m; }
+    public String getChequeScanPath() { return chequeScanPath; }
+    public void setChequeScanPath(String p) { this.chequeScanPath = p; }
+    public boolean hasChequeScan() { return chequeScanPath != null && !chequeScanPath.isBlank(); }
+    /** Pending and its scheduled date has arrived: the payment is now due to be paid out. */
+    public boolean isDue(LocalDate today) { return status == PaymentStatus.PENDING && !scheduledDate.isAfter(today); }
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
     public LocalDate getScheduledDate() { return scheduledDate; }
@@ -69,8 +79,8 @@ public class Payment {
     public boolean isDistributed() { return status == PaymentStatus.COMPLETED; }
 
     public Payment copy() {
-        return new Payment(id, applicantId, programmeId, benefitType, amount, scheduledDate,
+        return new Payment(id, applicantId, programmeId, benefitType, paymentMethod, amount, scheduledDate,
                 distributedDate, status, failureReason, payeeName, verified, verifiedBy,
-                verifiedAt, recordedBy, recordedAt);
+                verifiedAt, recordedBy, recordedAt, chequeScanPath);
     }
 }

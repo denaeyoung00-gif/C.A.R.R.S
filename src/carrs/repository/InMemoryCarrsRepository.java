@@ -11,16 +11,21 @@ public class InMemoryCarrsRepository implements CarrsRepository {
     private final Map<Integer, Enrolment> enrolments = new LinkedHashMap<>();
     private final Map<Integer, Payment> payments = new LinkedHashMap<>();
     private final List<PaymentChange> changes = new ArrayList<>();
+    private final List<PaymentAudit> audits = new ArrayList<>();
     private int nextPaymentId = 1;
+    private int nextAuditId = 1;
     private int nextChangeId = 1;
     public boolean failOnSave = false;   // lets a test simulate a database crash
 
+    private final List<StaffMember> staffList = new ArrayList<>();
+    public void add(StaffMember s) { staffList.add(s); }
     public void add(Applicant a) { applicants.put(a.getId(), a); }
     public void add(Programme p) { programmes.put(p.getId(), p); }
     public void add(Enrolment e) { enrolments.put(e.getId(), e); }
 
     @Override public Applicant findApplicant(int id) { return applicants.get(id); }
     @Override public List<Applicant> findAllApplicants() { return new ArrayList<>(applicants.values()); }
+    @Override public List<StaffMember> findAllStaff() { return new ArrayList<>(staffList); }
     @Override public Programme findProgramme(int id) { return programmes.get(id); }
     @Override public Enrolment findEnrolment(int id) {
         Enrolment e = enrolments.get(id);
@@ -45,15 +50,29 @@ public class InMemoryCarrsRepository implements CarrsRepository {
     }
 
     // ---- payments
-    @Override public void savePayment(Payment p) {
+    @Override public void savePayment(Payment p, PaymentAudit audit) {
         if (failOnSave) throw new RuntimeException("Simulated database failure");
         p.setId(nextPaymentId++);
         payments.put(p.getId(), p.copy());
+        if (audit != null) { audit.setPaymentId(p.getId()); audit.setId(nextAuditId++); audits.add(audit); }
     }
-    @Override public void updatePayment(Payment p, List<PaymentChange> newChanges) {
+    @Override public void updatePayment(Payment p, List<PaymentChange> newChanges, PaymentAudit audit) {
         if (failOnSave) throw new RuntimeException("Simulated database failure");
         payments.put(p.getId(), p.copy());
         for (PaymentChange c : newChanges) { c.setId(nextChangeId++); changes.add(c); }
+        if (audit != null) { audit.setId(nextAuditId++); audits.add(audit); }
+    }
+    @Override public void saveAudit(PaymentAudit audit) {
+        if (failOnSave) throw new RuntimeException("Simulated database failure");
+        audit.setId(nextAuditId++); audits.add(audit);
+    }
+    @Override public List<PaymentAudit> findAuditForApplicant(int applicantId) {
+        List<PaymentAudit> out = new ArrayList<>();
+        for (PaymentAudit a : audits) {
+            Payment p = a.getPaymentId() == null ? null : payments.get(a.getPaymentId());
+            if (p != null && p.getApplicantId() == applicantId) out.add(a);
+        }
+        return out;
     }
     @Override public Payment findPayment(int id) {
         Payment p = payments.get(id);

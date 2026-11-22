@@ -27,6 +27,9 @@ public class StaffMember {
     /** Office Staff, Office Manager and MP may record and correct payments (not the Office Attendant). */
     public boolean canRecordPayments() { return role != Role.OFFICE_ATTENDANT; }
 
+    /** Viewing payment records needs the same authority as recording them (interns/attendants are denied). */
+    public boolean canViewPayments() { return canRecordPayments(); }
+
     /** Only the Office Manager and the MP may verify a payment. */
     public boolean canVerifyPayments() {
         return role == Role.OFFICE_MANAGER || role == Role.MEMBER_OF_PARLIAMENT;

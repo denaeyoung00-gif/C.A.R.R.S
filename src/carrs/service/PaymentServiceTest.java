@@ -15,7 +15,7 @@ public class PaymentServiceTest {
     InMemoryCarrsRepository repo;
     PaymentService service;
     StaffMember manager, staff, attendant, mp;
-    LocalDate date = LocalDate.of(2026, 11, 10);
+    LocalDate date = LocalDate.now().minusDays(3);   // a past date, so the payment is due
 
     @Before public void setUp() {
         repo = new InMemoryCarrsRepository();
@@ -35,10 +35,16 @@ public class PaymentServiceTest {
         return service.recordPayment(staff, 1, 1, BenefitType.TUITION_SUPPORT,
                 new BigDecimal("5000"), date, null);
     }
-    private Payment completed() throws PaymentException {
-        Payment p = record();
-        service.updateStatus(staff, p.getId(), PaymentStatus.PROCESSED, null);
-        return service.updateStatus(staff, p.getId(), PaymentStatus.COMPLETED, null);
+    /** The whole cheque flow: print, attach the scan, Processed, Completed. */
+    private Payment complete(StaffMember who, Payment p) throws PaymentException {
+        service.printCheque(who, p.getId());
+        service.attachChequeScan(who, p.getId(), "scans/cheque" + p.getId() + ".pdf", 150_000);
+        service.updateStatus(who, p.getId(), PaymentStatus.PROCESSED, null);
+        return service.updateStatus(who, p.getId(), PaymentStatus.COMPLETED, null);
+    }
+    private Payment completed() throws PaymentException { return complete(staff, record()); }
+    private Payment recordCheque() throws PaymentException {
+        return service.recordPayment(staff, 1, 1, BenefitType.TUITION_SUPPORT, new BigDecimal("5000"), date, null);
     }
     private void assertBlocked(PaymentException e, String text) {
         assertTrue("message was: " + e.getMessage(), e.getMessage().contains(text));
@@ -54,8 +60,7 @@ public class PaymentServiceTest {
         assertEquals(1, service.getPaymentHistory(1).size());
     }
     @Test public void payeeCanBeAnInstitution() throws Exception {
-        Payment p = service.recordPayment(staff, 1, 1, BenefitType.TUITION_SUPPORT,
-                new BigDecimal("80000"), date, "University of the West Indies");
+        Payment p = service.recordPayment(staff, 1, 1, BenefitType.TUITION_SUPPORT, new BigDecimal("80000"), date, "University of the West Indies");
         assertEquals("University of the West Indies", p.getPayeeName());
     }
     @Test public void attendantCannotRecord() {
@@ -121,10 +126,11 @@ public class PaymentServiceTest {
     @Test public void everyStatusChangeIsRecorded() throws Exception {
         Payment p = completed();
         List<PaymentChange> log = service.getChanges(p.getId());
-        assertEquals("status", log.get(0).getFieldName());
-        assertEquals("PENDING", log.get(0).getOldValue());
-        assertEquals("PROCESSED", log.get(0).getNewValue());
-        assertEquals(3, log.size());   // status, status, distributedDate
+        assertEquals("chequeScan", log.get(0).getFieldName());
+        assertEquals("status", log.get(1).getFieldName());
+        assertEquals("PENDING", log.get(1).getOldValue());
+        assertEquals("PROCESSED", log.get(1).getNewValue());
+        assertEquals(4, log.size());   // chequeScan, status, status, distributedDate
     }
 
     // ---- verification (AC-6)
@@ -140,8 +146,7 @@ public class PaymentServiceTest {
     }
     @Test public void theRecorderCannotVerifyTheirOwnPayment() throws Exception {
         Payment p = service.recordPayment(manager, 1, 1, BenefitType.TUITION_SUPPORT, BigDecimal.TEN, date, null);
-        service.updateStatus(manager, p.getId(), PaymentStatus.PROCESSED, null);
-        service.updateStatus(manager, p.getId(), PaymentStatus.COMPLETED, null);
+        complete(manager, p);
         try { service.verifyPayment(manager, p.getId()); fail(); }
         catch (PaymentException e) { assertBlocked(e, "cannot verify it"); }
     }
@@ -192,8 +197,7 @@ public class PaymentServiceTest {
     }
     @Test public void correctionCannotCreateADuplicate() throws Exception {
         record();
-        Payment other = service.recordPayment(staff, 1, 1, BenefitType.TUITION_SUPPORT,
-                BigDecimal.TEN, date.plusDays(5), null);
+        Payment other = service.recordPayment(staff, 1, 1, BenefitType.TUITION_SUPPORT, BigDecimal.TEN, date.plusDays(5), null);
         try { service.correctPayment(staff, other.getId(), null, null, date, null, "Moving it back a week"); fail(); }
         catch (PaymentException e) { assertBlocked(e, "already exists"); }
     }
@@ -218,8 +222,7 @@ public class PaymentServiceTest {
     // ---- summary (AC-4 / payment records)
     @Test public void summaryTotalsOnlyCompletedPaymentsInThePeriod() throws Exception {
         Payment a = completed();                                         // 5000 completed today
-        Payment b = service.recordPayment(staff, 1, 1, BenefitType.TUITION_SUPPORT,
-                new BigDecimal("2000"), date.plusDays(1), null);          // stays Pending: not counted
+        Payment b = service.recordPayment(staff, 1, 1, BenefitType.TUITION_SUPPORT, new BigDecimal("2000"), date.plusDays(1), null);          // stays Pending: not counted
         PaymentSummary s = service.getSummary(LocalDate.now().minusDays(1), LocalDate.now().plusDays(1));
         assertEquals(new BigDecimal("5000.00"), s.getTotalDistributed());
         assertEquals(1, s.getPaymentCount());
@@ -230,5 +233,138 @@ public class PaymentServiceTest {
     @Test public void summaryRejectsBackwardsDates() {
         try { service.getSummary(LocalDate.of(2026, 12, 1), LocalDate.of(2026, 11, 1)); fail(); }
         catch (PaymentException e) { assertBlocked(e, "cannot be before"); }
+    }
+
+    // ---- payment method: cheque is the only method
+    @Test public void everyPaymentIsAChequePayment() throws Exception {
+        assertEquals(PaymentMethod.CHEQUE, record().getPaymentMethod());
+    }
+    @Test public void programmeThatPaysNothingBlocksPayments() throws Exception {
+        repo.add(new Programme(3, "Training Workshop", ProgrammeStatus.ACTIVE).paysBenefits(false));
+        repo.add(new Enrolment(101, 1, 3, EnrolmentStatus.ACTIVE, LocalDateTime.now(), null));
+        try { service.recordPayment(staff, 1, 3, BenefitType.OTHER, BigDecimal.TEN, date, null); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "does not provide financial benefits"); }
+    }
+    @Test public void withdrawnEnrolmentCannotBePaid() throws Exception {
+        repo.add(new Applicant(3, "Mary Smith"));
+        repo.add(new Enrolment(102, 3, 1, EnrolmentStatus.WITHDRAWN, LocalDateTime.now(), null));
+        try { service.recordPayment(staff, 3, 1, BenefitType.TUITION_SUPPORT, BigDecimal.TEN, date, null); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "not approved"); }
+    }
+
+    // ---- eligibility and search (use case step 1)
+    @Test public void onlyEnrolledConstituentsAreEligible() {
+        assertEquals(1, service.getEligibleProgrammes(1).size());
+        assertEquals("Tertiary Scholarship", service.getEligibleProgrammes(1).get(0).getName());
+        assertTrue(service.getEligibleProgrammes(2).isEmpty());       // Tom is not enrolled
+    }
+    @Test public void programmesThatPayNothingAreNotEligible() {
+        repo.add(new Programme(3, "Training Workshop", ProgrammeStatus.ACTIVE).paysBenefits(false));
+        repo.add(new Enrolment(101, 2, 3, EnrolmentStatus.ACTIVE, LocalDateTime.now(), null));
+        assertTrue(service.getEligibleProgrammes(2).isEmpty());
+    }
+    @Test public void searchFindsByNameOrId() throws Exception {
+        assertEquals(1, service.searchApplicants(staff, "jane").size());
+        assertEquals(1, service.searchApplicants(staff, "2").size());
+        assertEquals(0, service.searchApplicants(staff, "zzz").size());
+        assertEquals(0, service.searchApplicants(staff, "  ").size());   // must type something
+    }
+    @Test public void attendantCannotViewOrSearch() throws Exception {
+        try { service.getPaymentHistory(attendant, 1); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "not authorised"); }
+        try { service.searchApplicants(attendant, ""); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "not authorised"); }
+        try { service.getAuditTrail(attendant, 1); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "not authorised"); }
+        assertEquals(0, service.getPaymentHistory(staff, 1).size());   // staff may
+    }
+
+    // ---- scheduling: stays Pending until the date
+    @Test public void futurePaymentStaysPendingUntilItsDate() throws Exception {
+        Payment p = service.recordPayment(staff, 1, 1, BenefitType.TUITION_SUPPORT, BigDecimal.TEN, LocalDate.now().plusDays(5), null);
+        assertFalse(p.isDue(LocalDate.now()));
+        assertTrue(p.isDue(LocalDate.now().plusDays(5)));
+        for (PaymentStatus next : new PaymentStatus[]{PaymentStatus.PROCESSED}) {
+            try { service.updateStatus(staff, p.getId(), next, null); fail(); }
+            catch (PaymentException e) { assertBlocked(e, "stays Pending"); }
+        }
+        assertEquals(PaymentStatus.PENDING, repo.findPayment(p.getId()).getStatus());
+        service.updateStatus(staff, p.getId(), PaymentStatus.FAILED, "Programme paused");   // failing early is fine
+    }
+    @Test public void pastDatedPaymentIsDue() throws Exception {
+        assertTrue(record().isDue(LocalDate.now()));
+    }
+
+    // ---- cheques (use case: print the cheque, upload the scan, then update the status)
+    @Test public void chequeCannotBeCompletedWithoutTheScan() throws Exception {
+        Payment p = recordCheque();
+        service.updateStatus(staff, p.getId(), PaymentStatus.PROCESSED, null);
+        try { service.updateStatus(staff, p.getId(), PaymentStatus.COMPLETED, null); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "scanned copy of the cheque"); }
+        service.attachChequeScan(staff, p.getId(), "C:/scans/cheque1.pdf", 200_000);
+        assertEquals(PaymentStatus.COMPLETED, service.updateStatus(staff, p.getId(), PaymentStatus.COMPLETED, null).getStatus());
+    }
+    @Test public void scanMustBeAllowedTypeAndSize() throws Exception {
+        Payment p = recordCheque();
+        try { service.attachChequeScan(staff, p.getId(), "cheque.zip", 1000); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "PDF, PNG or JPEG"); }
+        try { service.attachChequeScan(staff, p.getId(), "cheque.xlsx", 1000); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "PDF, PNG or JPEG"); }
+        try { service.attachChequeScan(staff, p.getId(), "cheque.pdf", 11L * 1024 * 1024); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "larger than 10 MB"); }
+        try { service.attachChequeScan(staff, p.getId(), "", 1000); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "Choose the scanned cheque"); }
+        assertFalse(repo.findPayment(p.getId()).hasChequeScan());
+        service.attachChequeScan(staff, p.getId(), "cheque.JPG", 9L * 1024 * 1024);
+        assertTrue(repo.findPayment(p.getId()).hasChequeScan());
+    }
+    @Test public void chequeTextHasThePayeeAndAmount() throws Exception {
+        Payment p = recordCheque();
+        String text = service.printCheque(staff, p.getId());
+        assertTrue(text.contains("Jane Brown"));
+        assertTrue(text.contains("$5000.00"));
+    }
+
+    @Test public void chequeOnlyOnOrAfterTheScheduledDateAndOnlyByAuthorisedStaff() throws Exception {
+        Payment later = service.recordPayment(staff, 1, 1, BenefitType.TUITION_SUPPORT,
+                BigDecimal.TEN, LocalDate.now().plusDays(4), null);
+        try { service.printCheque(staff, later.getId()); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "on or after the scheduled date"); }
+        try { service.printCheque(attendant, later.getId()); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "not authorised"); }
+        try { service.attachChequeScan(attendant, later.getId(), "x.pdf", 10); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "not authorised"); }
+    }
+    @Test public void aCompletedPaymentCannotHaveAChequePrintedAgain() throws Exception {
+        Payment p = completed();
+        try { service.printCheque(staff, p.getId()); fail(); }
+        catch (PaymentException e) { assertBlocked(e, "cannot have a cheque printed"); }
+    }
+
+    // ---- audit trail (every payment-related activity: who, when, what)
+    @Test public void everyActivityIsInTheAuditTrail() throws Exception {
+        Payment p = recordCheque();
+        service.printCheque(staff, p.getId());
+        service.attachChequeScan(staff, p.getId(), "cheque.png", 5000);
+        service.updateStatus(staff, p.getId(), PaymentStatus.PROCESSED, null);
+        service.updateStatus(staff, p.getId(), PaymentStatus.COMPLETED, null);
+        service.verifyPayment(manager, p.getId());
+        service.correctPayment(staff, p.getId(), null, null, null, "UTech", "Wrong payee named");
+        List<PaymentAudit> trail = service.getAuditTrail(staff, 1);
+        List<String> actions = new java.util.ArrayList<>();
+        for (PaymentAudit a : trail) actions.add(a.getAction());
+        assertEquals(List.of("RECORDED", "CHEQUE_PRINTED", "CHEQUE_SCAN_ATTACHED", "STATUS_CHANGED",
+                "STATUS_CHANGED", "VERIFIED", "CORRECTED"), actions);
+        assertEquals(2, trail.get(0).getPerformedBy());       // who recorded it
+        assertEquals(1, trail.get(5).getPerformedBy());       // the manager verified
+        assertNotNull(trail.get(0).getPerformedAt());
+        assertTrue(trail.get(0).getDetails().contains("5000.00"));
+    }
+    @Test public void aFailedSaveLeavesNoAuditLine() throws Exception {
+        repo.failOnSave = true;
+        try { record(); fail(); } catch (PaymentException e) { assertBlocked(e, "No changes were made"); }
+        repo.failOnSave = false;
+        assertTrue(service.getAuditTrail(staff, 1).isEmpty());
+        assertTrue(service.getPaymentHistory(1).isEmpty());
     }
 }
