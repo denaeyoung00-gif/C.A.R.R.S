@@ -2,7 +2,7 @@ Setting up C.A.R.R.S on your laptop (about 15 minutes)
 
 A. Get the code
 
-Install Git, IntelliJ, a JDK (21 or newer) and MySQL 8 with Workbench, if you haven’t already.
+Install Git for desktops, IntelliJ/VSCODE, a JDK (21 or newer) and MySQL 8 with Workbench, if you haven’t already.
 Open Git Bash and run:
 cd ~/IdeaProjects
 git clone https://github.com/denaeyoung00-gif/C.A.R.R.S.git
@@ -18,6 +18,8 @@ Right-click the src folder > Mark Directory as > Sources Root.
 File > Project Structure > Project: pick your JDK.
 Project Structure > Libraries > + > Java: add the MySQL Connector/J jar, junit-4.13.2.jar and hamcrest-core-1.3.jar.
 Build > Rebuild Project. There should be no red.
+
+IF YOU ARE USING VSCODE ur on ur own bro. figure it out, I beleive in u 
 
 C. Set up the database
 
