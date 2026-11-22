@@ -1,14 +1,18 @@
 package carrs.repository;
 
 import carrs.model.*;
+import java.time.LocalDate;
 import java.util.*;
 
+/** Fake repository used by the JUnit tests, so tests run without MySQL. */
 public class InMemoryCarrsRepository implements CarrsRepository {
-    private final Map<Integer, Applicant> applicants = new HashMap<>();
+    private final Map<Integer, Applicant> applicants = new LinkedHashMap<>();
     private final Map<Integer, Programme> programmes = new LinkedHashMap<>();
     private final Map<Integer, Enrolment> enrolments = new LinkedHashMap<>();
-    private final List<AuditEntry> audit = new ArrayList<>();
-    private int nextEnrolmentId = 1000;
+    private final Map<Integer, Payment> payments = new LinkedHashMap<>();
+    private final List<PaymentChange> changes = new ArrayList<>();
+    private int nextPaymentId = 1;
+    private int nextChangeId = 1;
     public boolean failOnSave = false;   // lets a test simulate a database crash
 
     public void add(Applicant a) { applicants.put(a.getId(), a); }
@@ -16,6 +20,7 @@ public class InMemoryCarrsRepository implements CarrsRepository {
     public void add(Enrolment e) { enrolments.put(e.getId(), e); }
 
     @Override public Applicant findApplicant(int id) { return applicants.get(id); }
+    @Override public List<Applicant> findAllApplicants() { return new ArrayList<>(applicants.values()); }
     @Override public Programme findProgramme(int id) { return programmes.get(id); }
     @Override public Enrolment findEnrolment(int id) {
         Enrolment e = enrolments.get(id);
@@ -38,12 +43,46 @@ public class InMemoryCarrsRepository implements CarrsRepository {
             if (e.getProgrammeId() == programmeId && e.isLive()) n++;
         return n;
     }
-    @Override public List<AuditEntry> findAuditEntries() { return new ArrayList<>(audit); }
-    @Override public void saveTransfer(Enrolment source, Enrolment created, AuditEntry entry) {
+
+    // ---- payments
+    @Override public void savePayment(Payment p) {
         if (failOnSave) throw new RuntimeException("Simulated database failure");
-        enrolments.get(source.getId()).setStatus(EnrolmentStatus.TRANSFERRED);
-        created.setId(nextEnrolmentId++);
-        enrolments.put(created.getId(), created.copy());
-        audit.add(entry);
+        p.setId(nextPaymentId++);
+        payments.put(p.getId(), p.copy());
+    }
+    @Override public void updatePayment(Payment p, List<PaymentChange> newChanges) {
+        if (failOnSave) throw new RuntimeException("Simulated database failure");
+        payments.put(p.getId(), p.copy());
+        for (PaymentChange c : newChanges) { c.setId(nextChangeId++); changes.add(c); }
+    }
+    @Override public Payment findPayment(int id) {
+        Payment p = payments.get(id);
+        return p == null ? null : p.copy();
+    }
+    @Override public List<Payment> findPaymentsByApplicant(int applicantId) {
+        List<Payment> out = new ArrayList<>();
+        for (Payment p : payments.values()) if (p.getApplicantId() == applicantId) out.add(p.copy());
+        out.sort(Comparator.comparing(Payment::getScheduledDate).reversed());
+        return out;
+    }
+    @Override public Payment findLivePayment(int applicantId, int programmeId, BenefitType type, LocalDate date) {
+        for (Payment p : payments.values())
+            if (p.getApplicantId() == applicantId && p.getProgrammeId() == programmeId
+                    && p.getBenefitType() == type && p.getScheduledDate().equals(date)
+                    && p.getStatus() != PaymentStatus.FAILED) return p.copy();
+        return null;
+    }
+    @Override public List<Payment> findCompletedPaymentsBetween(LocalDate from, LocalDate to) {
+        List<Payment> out = new ArrayList<>();
+        for (Payment p : payments.values())
+            if (p.getStatus() == PaymentStatus.COMPLETED && p.getDistributedDate() != null
+                    && !p.getDistributedDate().isBefore(from) && !p.getDistributedDate().isAfter(to))
+                out.add(p.copy());
+        return out;
+    }
+    @Override public List<PaymentChange> findPaymentChanges(int paymentId) {
+        List<PaymentChange> out = new ArrayList<>();
+        for (PaymentChange c : changes) if (c.getPaymentId() == paymentId) out.add(c);
+        return out;
     }
 }
