@@ -1,6 +1,6 @@
 import java.util.Scanner;
 
-public class Mileage
+public class mileage
 {
     /**Testing 1,2,3 */
 
