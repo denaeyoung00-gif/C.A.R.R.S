@@ -1,14 +1,49 @@
-import java.lang; 
-import java.util;
-import java.io;
-import java.time;
-import java.util.List;
+import java.util.*;
+import java.time.*;
+import java.sql.*;
 
 public class TransferReport extends Report{
-    
-    private List <transfer> transferlist;
 
-    public void generateTransferReport( DateRange dateRange){
+    public static class TransferException extends Exception{
+        public TransferException(String message){
+            super(message);
+        }
+    }
+    
+    private List<transfer> transferlist;
+
+    public void generateTransferReport( DateRange dateRange) throws TransferException{
+        String url= "";
+        String sql = " SELECT applicant_id, original_program, transferred_program,reason" + " FROM transfer WHERE transfer_date BETWEEN ? and ?"
+
+        
+        List<Transfer> found = new ArrayList<>();
+        try (Connection conn = DriverManager.getConnection(url);
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setDate(1, java.sql.Date.valueOf(dateRange.getStart()));
+            stmt.setDate(2, java.sql.Date.valueOf(dateRange.getEnd()));
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    found.add(new Transfer(rs.getString("applicant_id"), rs.getString("original_program"),
+                                           rs.getString("transferred_program"), rs.getString("reason")));
+                }
+            }
+        } catch (SQLException e) {
+            throw new TransferException("Database error: " + e.getMessage());
+        }
+
+        // TS-12: no transferred applicants
+        if (found.isEmpty())
+            throw new TransferException("There are no transferred applicants for the selected period.");
+
+        this.transferlist = found;
+
+        // TS-11
+        System.out.println("=== TRANSFER REPORT ===");
+        for (Transfer t : transferlist) {
+            System.out.println(t.getApplicantID() + " | " + t.getOriginalProgram()
+                               + " -> " + t.getTransferredProgram() + " | Reason: " + t.getReason());
+        }
 
     }
 }

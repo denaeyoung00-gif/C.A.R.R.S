@@ -1,12 +1,15 @@
-import java.lang; 
-import java.util;
-import java.io;
-import java.time;
+import java.awt.Font;
+import java.awt.Graphics2D;
+import java.awt.print.Printable;
+import java.awt.print.PrinterException;
+import java.awt.print.PrinterJob;
+import java.util.List;
+import java.time.LocalDate;
 
-abstract class Report{
-    private String reportID,title , generatedBy;
-    private Date dateGenerated;
-    private  ReportCriteria criteria; 
+ public abstract class Report{
+    protected String reportID,title , generatedBy;
+    protected LocalDate dateGenerated;
+    protected  ReportCriteria criteria; 
 
     public String getReportId ( string reportID){ // getter for reportId
         return reportID;
@@ -28,11 +31,23 @@ abstract class Report{
         return criteria; 
     }
 
-    public abstract void generate (ReportCriteria criteria){}
-
     public void display(){
     }
 
-    public void export( String format){}
+public void print(List<String> lines) throws PrinterException {// allows the report to be saved as a printable PDF
+    PrinterJob job = PrinterJob.getPrinterJob();
+    job.setPrintable((graphics, pageFormat, pageIndex) -> {
+        int linesPerPage = (int) (pageFormat.getImageableHeight() / 14);
+        int start = pageIndex * linesPerPage;
+        if (start >= lines.size()) return Printable.NO_SUCH_PAGE;
 
+        Graphics2D g = (Graphics2D) graphics;
+        g.translate(pageFormat.getImageableX(), pageFormat.getImageableY());
+        g.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 10));
+        for (int i = 0; i < linesPerPage && start + i < lines.size(); i++)
+            g.drawString(lines.get(start + i), 0, (i + 1) * 14);
+        return Printable.PAGE_EXISTS;
+    });
+    if (job.printDialog()) job.print();   // opens the normal Print window
+}
 }

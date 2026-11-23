@@ -1,15 +1,59 @@
-import java.lang; 
-import java.util;
-import java.io;
-import java.time;
-import java.util.List;
+import java.util.*;
+import java.time.*;
+import java.sql.*;
 
 public class BenefitsReport extends Report{
+
+    public static class BenefitsException extends Exception{
+        public BenefitsException(String message){
+            super(message);
+        }
+    }
     
     private String programID;
     private int receivedCount, pendingCount;
 
-    public void generateBenefitsReport(string programID){
+    public void generateBenefitsReport(string programID) throws BenefitException{
+        String url = "";// database link 
+        String checksql = "SELECT 1 FROM program WHERE program_id = ?";
+        String sql = " SELECT benefit_received_date FROM application WHERE program_id = ?"
 
+        int received = 0, pending= 0;
+
+           try (Connection conn = DriverManager.getConnection(url)) {
+
+            try (PreparedStatement check = conn.prepareStatement(checkSql)) {
+                check.setString(1, programID);
+                try (ResultSet rs = check.executeQuery()) {
+                    if (!rs.next())
+                        throw new BenefitsException("Programme " + programID + " does not exist.");
+                }
+            }
+
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setString(1, programID);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        if (rs.getDate("benefit_received_date") != null) received++;
+                        else pending++;
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new BenefitsException("Database error: " + e.getMessage());
+        }
+
+        // TS-8: no benefit records for this programme
+        if (received + pending == 0)
+            throw new BenefitsException("No benefit records exist for programme " + programID + ".");
+
+        this.programID = programID;
+        this.receivedCount = received;
+        this.pendingCount = pending;
+
+        // TS-7
+        System.out.println("=== BENEFITS REPORT: " + programID + " ===");
+        System.out.println("Received benefits: " + receivedCount);
+        System.out.println("Still to receive:  " + pendingCount);
     }
 }

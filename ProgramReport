@@ -1,15 +1,72 @@
-import java.lang; 
-import java.util;
-import java.io;
-import java.time;
-import java.util.List;
+import java.util.*;
+import java.time.*;
+import java.sql.*;
 
-public class programReport extends Report{
+public class ProgramReport extends Report{
+
+    public static class ProgramException extends Exception{
+        public ProgramException( String message){
+            super(message);
+        }
+    }
 
     private String programID;
     private int totalApplicants, acceptedCount, rejectedCount ,inProgressCount;
 
-    public void generateBy(String programID){
+    public void generateBy(String programID) throws ProgramException{
+        String url = "";// database link 
+        String checkSql = "SELECT 1 FROM program WHERE program_id = ?";
+        String sql = "SELECT applicant_id, name, contact, status, rejection_reason" + "FROM applicant WHERE program_id = ?";
+        
+        int accepted = 0, rejected =0, inProgress =0 ; 
+        List<String> rows = new ArryList<>();
 
+        try (Connection conn = DriverManager.getConnection(url)) {
+
+            // TS-6: programme does not exist
+            try (PreparedStatement check = conn.prepareStatement(checkSql)) {
+                check.setString(1, programID);
+                try (ResultSet rs = check.executeQuery()) {
+                    if (!rs.next())
+                        throw new ProgramException("Programme " + programID + " does not exist.");
+                }
+            }
+
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setString(1, programID);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        String status = rs.getString("status");
+                        String row = rs.getString("applicant_id") + " | " + rs.getString("name")
+                                   + " | " + rs.getString("contact") + " | " + status;
+                        if (status.equalsIgnoreCase("ACCEPTED")) accepted++;
+                        else if (status.equalsIgnoreCase("REJECTED")) {
+                            rejected++;
+                            row += " | Reason: " + rs.getString("rejection_reason");
+                        } else inProgress++;
+                        rows.add(row);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new ProgramException("Database error: " + e.getMessage());
+        }
+
+        // TS-6: programme is empty
+        if (rows.isEmpty())
+            throw new ProgramException("Programme " + programID + " has no applicants.");
+
+        this.programID = programID;
+        this.totalApplicants = rows.size();
+        this.acceptedCount = accepted;
+        this.rejectedCount = rejected;
+        this.inProgressCount = inProgress;
+
+        // TS-5
+        System.out.println("=== PROGRAMME REPORT: " + programID + " ===");
+        System.out.println("Total applicants: " + totalApplicants);
+        System.out.println("Accepted: " + acceptedCount + " | Rejected: " + rejectedCount
+                           + " | In progress: " + inProgressCount);
+        for (String row : rows) System.out.println(row);
     }
 }

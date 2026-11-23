@@ -1,13 +1,57 @@
-import java.lang; 
-import java.util;
-import java.io;
-import java.time;
-import java.util.List;
+import java.util.*;
+import java.io.*;
+import java.time.*;
+import java.sql.*;
+import java.time.temporal.ChronoUnit.*;
+import java.time.LocalDate; 
 
 public class ApplicationTimelineReport extends Report{
+
+    public static class TimelineException extends Exception{
+        public TimelineException( String message){
+            super(message);
+        }
+    }
+
     private String applicationID;
-    private Date startDate, benefitReceivedDate;
+    private LocalDate startDate, benefitReceivedDate;
     private int durationDays;
 
-    public void generateTimeline(String application ID){}
+    public void generateTimeline(String application ID) throws TimelineException{
+        String url = ""; // Database link 
+      String sql = "SELECT start_date, benefit_received_date FROM application WHERE application_id = ?";
+
+        LocalDate start = null, received = null;
+        try (Connection conn = DriverManager.getConnection(url);
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, applicationID);
+            try (ResultSet rs = stmt.executeQuery()) {
+                // TS-10: non-existent application
+                if (!rs.next())
+                    throw new TimelineException("Application " + applicationID + " does not exist.");
+                java.sql.Date s = rs.getDate("start_date");
+                java.sql.Date r = rs.getDate("benefit_received_date");
+                if (s != null) start = s.toLocalDate();
+                if (r != null) received = r.toLocalDate();
+            }
+        } catch (SQLException e) {
+            // TS-4 style failure: error message, nothing printed
+            throw new TimelineException("Database error: " + e.getMessage());
+        }
+
+        // TS-10: incomplete application
+        if (start == null || received == null)
+            throw new TimelineException("Application " + applicationID + " is incomplete.");
+
+        this.applicationID = applicationID;
+        this.startDate = start;
+        this.benefitReceivedDate = received;
+        this.durationDays = (int) ChronoUnit.DAYS.between(startDate, benefitReceivedDate);
+
+        // TS-9
+        System.out.println("=== APPLICATION TIMELINE: " + applicationID + " ===");
+        System.out.println("Submitted:         " + startDate);
+        System.out.println("Benefits received: " + benefitReceivedDate);
+        System.out.println("Total time taken:  " + durationDays + " days");
+    }
 }

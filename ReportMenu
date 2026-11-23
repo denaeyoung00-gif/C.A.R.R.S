@@ -1,0 +1,78 @@
+import java.util*;
+import java.time*;
+import java.time.format.DateTimeParseException; 
+import java.time.LocalDate;
+
+public class ReportMenu{
+
+    public static void displayMenu(){
+        Scanner input = new Scanner(System.in);
+        boolean running = true; 
+
+        while( running){// displays the menu
+            System.out.println("\n --- Generate Report ---");
+            System.out.println ("1. Quaterly(General) Report");
+            System.out.println ("2. Program Report ");
+            System.out.println("3.Benefits Report");
+            System.out.println("$4.Application Timeline Report");
+            System.out.printil("5. Transfer Report");
+            System.out.println("0. Exit");
+            System.out.println ("Choose the type of report you would like to generate:");
+
+            String choice = input.nextLine().trime(); 
+
+            try{
+                switch(choice){
+                    case "1": 
+                     QuaterlyReport quaterly = new QuaterlyReport();
+                     String q = quaterly.chooseQuater(quarterly.Quarters);
+                     System.out.print("Enter year:");
+                     int year = Integer. parseInt(input.nextLine().trim());
+                     quaterly.generateQuarterly(Integer.parseInt(q.substring(1)), year);
+                     new QuarterlyReport().generateBy(input.nextLine().trim());// generates quarterly report 
+                    break;
+
+                case"2":
+                    System.out.println(" Enter Program ID:")
+                    new ProgramReport().generateBy(input.nextLine().trim());// generates program report 
+                    break;
+                
+                case "3": 
+                    System.out.println("Enter Program ID:");
+                    new BenefitsReport().generateBenefitsReport(input.nextLine().trim());// generates Benefits report 
+                    break;
+
+                case "4":
+                    System.out.print("Enter Application ID Number:");
+                    new ApplicationTimeLineReport().generateTimeline(input.nextLine().trim());// generates timeline report
+                    break;
+                
+                case "5": 
+                      System.out.print("Enter start date (YYYY-MM-DD): ");
+                        LocalDate from = LocalDate.parse(input.nextLine().trim());
+                        System.out.print("Enter end date (YYYY-MM-DD): ");
+                        LocalDate to = LocalDate.parse(input.nextLine().trim());
+                        new TransferReport().generateTransferReport(new DateRange(from, to));// generate Transfer report 
+                        break;
+                    case "0":
+                        running = false;
+                        break;
+                    default:
+                        // TS-2: invalid option
+                        System.out.println("Error: invalid option. Please choose 0-5.");
+                }
+            } catch (ApplicationTimelineReport.TimelineException | BenefitsReport.BenefitsException |
+                     ProgramReport.ProgramException | QuarterlyReport.QuarterlyException |
+                     TransferReport.TransferException e) {
+                System.out.println("Error: " + e.getMessage());
+            } catch (NumberFormatException e) {
+                System.out.println("Error: please enter a valid number.");
+            } catch (DateTimeParseException e) {
+                System.out.println("Error: dates must be in the format YYYY-MM-DD.");
+                }
+            }
+        }
+    }
+
+
+}

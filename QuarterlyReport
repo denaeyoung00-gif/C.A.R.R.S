@@ -1,0 +1,84 @@
+import java.util.*;
+import java.time.*;
+import java.time.LocalDate;
+
+public class QuarterlyReport extends Report{
+
+    public static class QuarterlyException extends Exception{
+        public QuarterlyException(String message){
+            super(message);
+        }
+    }
+
+    private year;
+    private List<String> summaryData;
+    List<String> Quarters = List.of("Q1"."Q2","Q3","Q4")// immmutable list of the different quarters. 
+
+    public int getYear ( int year){// getter that returns the year
+        return year;
+    }
+
+    public List getsummaryData (List summaryData){// getter that returns summeryData
+        return summaryData;
+    }
+
+    public string chooseQuarter( List<String> Quarters){// allows user to choose their desired quarter
+        
+        Scanner input = new Scanner(System.in);
+        String choice; 
+        while(true){
+            System.out.println("Please enter the quarter you would like to generate the report for(Q1-Q4):");
+            choice= input.nextLine().trim().toUpperCase();
+            if (choice.equals("Q1")) return Quarters.get(0);
+            if (choice.equals("Q2")) return Quarters.get(1);
+            if (choice.equals("Q3")) return Quarters.get(2);
+            if (choice.equals("Q4")) return Quarters.get(3);     
+    }
+
+    public void generateQuarterly(int quarter, int year) throws QuarterlyException{
+        if(quarter <1 || quarter> 4)
+            throw new QuarterlyException("Invalid quarter" + quarter + ".") // exception in the event an invalid quarter is entered. 
+
+        LocalDate start = LocalDate.of(year, (quarter - 1) * 3 + 1, 1);
+        LocalDate end = start.plusMonths(3).minusDays(1);
+
+        String url = "";   // database link 
+        String sql = "SELECT program_id, benefit_received_date FROM application "
+                   + "WHERE start_date BETWEEN ? AND ?";
+
+        int total = 0, received = 0;
+        Map<String, Integer> perProgram = new TreeMap<>();
+
+        try (Connection conn = DriverManager.getConnection(url);
+             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setDate(1, java.sql.Date.valueOf(start));
+            stmt.setDate(2, java.sql.Date.valueOf(end));
+            try (ResultSet rs = stmt.executeQuery()) {
+                while (rs.next()) {
+                    total++;
+                    perProgram.merge(rs.getString("program_id"), 1, Integer::sum);
+                    if (rs.getDate("benefit_received_date") != null) received++;
+                }
+            }
+        } catch (SQLException e) {
+            // TS-4: error message and no partial report
+            throw new QuarterlyException("Database error: " + e.getMessage());
+        }
+
+        // TS-3: data must be available
+        if (total == 0)
+            throw new QuarterlyException("No data available for Q" + quarter + " " + year + ".");
+
+        // everything is built before anything is saved or printed
+        List<String> summary = new ArrayList<>();
+        summary.add("=== QUARTERLY REPORT: Q" + quarter + " " + year + " ===");
+        summary.add("Applications received: " + total);
+        summary.add("Benefits issued: " + received);
+        for (Map.Entry<String, Integer> e : perProgram.entrySet())
+            summary.add("  " + e.getKey() + ": " + e.getValue() + " applications");
+
+        this.year = year;
+        this.summaryData = summary;
+        for (String line : summaryData) System.out.println(line);
+    }
+}
