@@ -9,8 +9,10 @@ import java.util.List;
 import javax.swing.*;
 
 /**
- * The main C.A.R.R.S window: a row of tabs (like browser tabs) along the top, one per feature,
- * and a "logged in as" selector. Teammates plug their screens in through registerTabs().
+ * The main C.A.R.R.S window: a row of tabs (like browser tabs) along the top,
+ * one per feature,
+ * and a "logged in as" selector. Teammates plug their screens in through
+ * registerTabs().
  */
 public class CarrsApp extends JFrame {
     private final CarrsRepository repo;
@@ -34,11 +36,14 @@ public class CarrsApp extends JFrame {
         header.add(title, BorderLayout.WEST);
         JPanel who = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         who.add(new JLabel("Logged in as:"));
-        for (StaffMember s : repo.findAllStaff()) userBox.addItem(s);
+        for (StaffMember s : repo.findAllStaff())
+            userBox.addItem(s);
         userBox.setRenderer(new DefaultListCellRenderer() {
-            @Override public Component getListCellRendererComponent(JList<?> l, Object v, int i, boolean s, boolean f) {
+            @Override
+            public Component getListCellRendererComponent(JList<?> l, Object v, int i, boolean s, boolean f) {
                 super.getListCellRendererComponent(l, v, i, s, f);
-                if (v instanceof StaffMember m) setText(m.getName() + "  (" + pretty(m.getRole().name()) + ")");
+                if (v instanceof StaffMember m)
+                    setText(m.getName() + "  (" + pretty(m.getRole().name()) + ")");
                 return this;
             }
         });
@@ -65,20 +70,23 @@ public class CarrsApp extends JFrame {
     /**
      * ===== TEAMMATES: PLUG YOUR SCREEN IN HERE =====
      * Replace your PlaceholderTab with your own class that implements FeatureTab.
-     * Example:   features.add(new RegisterApplicantTab(repo));
+     * Example: features.add(new RegisterApplicantTab(repo));
      */
     private void registerTabs() {
-        features.add(new PlaceholderTab("Register Applicant", "Justin Bent", "FTR-GOV-004 Program Administration and Approval"));
+        features.add(new PlaceholderTab("Register Applicant", "Justin Bent",
+                "FTR-GOV-004 Program Administration and Approval"));
         features.add(new PlaceholderTab("Programme Management", "Gareth Chambers", "FTR-GOV-005 Program Management"));
-        features.add(new PlaceholderTab("Enrolment Management", "Latania Johnson", "FTR-GOV-008 Enrollment Management"));
-        features.add(new PlaceholderTab("Appeals & Disputes", "Akili Duncan", "FTR-GOV-007 Appeal and Dispute Management"));
+        features.add(
+                new PlaceholderTab("Enrolment Management", "Latania Johnson", "FTR-GOV-008 Enrollment Management"));
+        features.add(new AppealsDisputesTab(repo));
         features.add(new PlaceholderTab("Reports", "Denae Young", "FTR-GOV-006 Generate Report"));
-        features.add(new PaymentTab(repo));   // Payment and Benefit Management: Nashella Fairweather
+        features.add(new PaymentTab(repo)); // Payment and Benefit Management: Nashella Fairweather
     }
 
     private void notifyTabs() {
         StaffMember u = (StaffMember) userBox.getSelectedItem();
-        for (FeatureTab f : features) f.onUserChanged(u);
+        for (FeatureTab f : features)
+            f.onUserChanged(u);
     }
 
     private static String pretty(String role) {
@@ -87,15 +95,19 @@ public class CarrsApp extends JFrame {
     }
 
     public static void main(String[] args) {
-        UIManager.put("nimbusBase", new Color(230, 110, 20));                // main orange
-        UIManager.put("nimbusBlueGrey", new Color(250, 225, 195));           // soft orange panels
-        UIManager.put("control", new Color(255, 245, 232));                  // cream background
+        UIManager.put("nimbusBase", new Color(230, 110, 20)); // main orange
+        UIManager.put("nimbusBlueGrey", new Color(250, 225, 195)); // soft orange panels
+        UIManager.put("control", new Color(255, 245, 232)); // cream background
         UIManager.put("nimbusSelectionBackground", new Color(240, 140, 40)); // selected row/tab
-        UIManager.put("nimbusFocus", new Color(200, 80, 0));                 // click outline
+        UIManager.put("nimbusFocus", new Color(200, 80, 0)); // click outline
         try {
             for (UIManager.LookAndFeelInfo info : UIManager.getInstalledLookAndFeels())
-                if ("Nimbus".equals(info.getName())) { UIManager.setLookAndFeel(info.getClassName()); break; }
-        } catch (Exception ignored) { }
+                if ("Nimbus".equals(info.getName())) {
+                    UIManager.setLookAndFeel(info.getClassName());
+                    break;
+                }
+        } catch (Exception ignored) {
+        }
         SwingUtilities.invokeLater(() -> new CarrsApp(new MySqlCarrsRepository()).setVisible(true));
     }
 }
