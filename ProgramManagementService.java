@@ -1,9 +1,9 @@
 import java.time.LocalDate;
 
-public class ProgramManagementServices {
+public class ProgramManagementService {
     private final ProgramRepository repository;
 
-    public ProgramManagementServices(ProgramRepository repository) {
+    public ProgramManagementService(ProgramRepository repository) {
         this.repository = repository;
     }
 
