@@ -58,12 +58,21 @@ public class AppealsDisputesTab implements FeatureTab {
     private DefaultListModel<SupportingDocument> docListModel;
     private JList<SupportingDocument> lstDocuments;
 
+    private JButton btnAddDoc;
+    private JButton btnRemoveDoc;
+    private JButton btnLodgeAppeal;
+
     private DefaultTableModel docketTableModel;
     private JTable docketTable;
     private JCheckBox chkReviewerRole;
     private JTextArea txtDecisionNote;
     private JLabel lblDecisionCharCounter;
     private JCheckBox chkSimulateSyncError;
+
+    private JButton btnReviewCase;
+    private JButton btnApprove;
+    private JButton btnDeny;
+    private JLabel lblAccessBanner;
 
     public AppealsDisputesTab(CarrsRepository repo) {
         this.repo = repo;
@@ -85,6 +94,58 @@ public class AppealsDisputesTab implements FeatureTab {
     public void onUserChanged(StaffMember user) {
         if (user != null && txtAgentId != null) {
             txtAgentId.setText(user.getName());
+        }
+        applyRoleAccess(user);
+    }
+
+    private void applyRoleAccess(StaffMember user) {
+        boolean isAttendant = false;
+        if (user != null && user.getRole() != null) {
+            String roleName = user.getRole().toString().trim().replace("_", " ");
+            isAttendant = "Office attendant".equalsIgnoreCase(roleName)
+                    || roleName.toLowerCase().contains("attendant")
+                    || roleName.toLowerCase().contains("intern");
+        }
+        boolean allowed = !isAttendant;
+        if (cmbApplications != null)
+            cmbApplications.setEnabled(allowed);
+        if (txtConstituency != null)
+            txtConstituency.setEnabled(allowed);
+        if (chkVerifiedResident != null)
+            chkVerifiedResident.setEnabled(allowed);
+        if (chkIncome != null)
+            chkIncome.setEnabled(allowed);
+        if (chkDoc != null)
+            chkDoc.setEnabled(allowed);
+        if (chkDependency != null)
+            chkDependency.setEnabled(allowed);
+        if (chkAdminError != null)
+            chkAdminError.setEnabled(allowed);
+        if (txtJustification != null)
+            txtJustification.setEnabled(allowed);
+        if (lstDocuments != null)
+            lstDocuments.setEnabled(allowed);
+        if (btnAddDoc != null)
+            btnAddDoc.setEnabled(allowed);
+        if (btnRemoveDoc != null)
+            btnRemoveDoc.setEnabled(allowed);
+        if (btnLodgeAppeal != null)
+            btnLodgeAppeal.setEnabled(allowed);
+        if (chkReviewerRole != null)
+            chkReviewerRole.setEnabled(allowed);
+        if (txtDecisionNote != null)
+            txtDecisionNote.setEnabled(allowed);
+        if (chkSimulateSyncError != null)
+            chkSimulateSyncError.setEnabled(allowed);
+        if (btnReviewCase != null)
+            btnReviewCase.setEnabled(allowed);
+        if (btnApprove != null)
+            btnApprove.setEnabled(allowed);
+        if (btnDeny != null)
+            btnDeny.setEnabled(allowed);
+        if (lblAccessBanner != null) {
+            lblAccessBanner.setText(allowed ? " SECURE AUDIT MODE " : " ACCESS RESTRICTED: OFFICE ATTENDANT ");
+            lblAccessBanner.setBackground(allowed ? ORANGE_ACCENT : STATUS_RED);
         }
     }
 
@@ -141,14 +202,15 @@ public class AppealsDisputesTab implements FeatureTab {
         JPanel badgeBlock = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         badgeBlock.setOpaque(false);
 
-        JLabel lblEnv = new JLabel(" SECURE AUDIT MODE ");
-        lblEnv.setFont(new Font("SansSerif", Font.BOLD, 11));
-        lblEnv.setOpaque(true);
-        lblEnv.setBackground(ORANGE_ACCENT);
-        lblEnv.setForeground(Color.WHITE);
-        lblEnv.setBorder(new EmptyBorder(6, 12, 6, 12));
+        lblAccessBanner = new JLabel(" SECURE AUDIT MODE ");
 
-        badgeBlock.add(lblEnv);
+        lblAccessBanner.setFont(new Font("SansSerif", Font.BOLD, 11));
+        lblAccessBanner.setOpaque(true);
+        lblAccessBanner.setBackground(ORANGE_ACCENT);
+        lblAccessBanner.setForeground(Color.WHITE);
+        lblAccessBanner.setBorder(new EmptyBorder(6, 12, 6, 12));
+
+        badgeBlock.add(lblAccessBanner);
 
         header.add(titleBlock, BorderLayout.WEST);
         header.add(badgeBlock, BorderLayout.EAST);
@@ -311,9 +373,9 @@ public class AppealsDisputesTab implements FeatureTab {
 
         JPanel pnlDocButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         pnlDocButtons.setOpaque(false);
-        JButton btnAddDoc = createStandardButton("Attach Document...");
+        btnAddDoc = createStandardButton("Attach Document...");
         btnAddDoc.addActionListener(e -> selectAndAddFile());
-        JButton btnRemoveDoc = createStandardButton("Remove Selected");
+        btnRemoveDoc = createStandardButton("Remove Selected");
         btnRemoveDoc.addActionListener(e -> {
             int selected = lstDocuments.getSelectedIndex();
             if (selected != -1)
@@ -342,7 +404,7 @@ public class AppealsDisputesTab implements FeatureTab {
         txtAgentId.setBorder(new LineBorder(ORANGE_BORDER));
         pnlAgent.add(txtAgentId);
 
-        JButton btnLodgeAppeal = new JButton("LODGE STATUTORY APPEAL");
+        btnLodgeAppeal = new JButton("LODGE STATUTORY APPEAL");
         btnLodgeAppeal.setOpaque(true);
         btnLodgeAppeal.setContentAreaFilled(true);
         btnLodgeAppeal.setBorderPainted(false);
@@ -468,13 +530,13 @@ public class AppealsDisputesTab implements FeatureTab {
         chkSimulateSyncError.setOpaque(false);
         chkSimulateSyncError.setFont(new Font("SansSerif", Font.PLAIN, 11));
 
-        JButton btnReviewCase = createStandardButton("Open Case");
+        btnReviewCase = createStandardButton("Open Case");
         btnReviewCase.addActionListener(e -> handleOpenCase());
 
-        JButton btnApprove = createStandardButton("Approve Appeal");
+        btnApprove = createStandardButton("Approve Appeal");
         btnApprove.addActionListener(e -> handleAdjudicate(true));
 
-        JButton btnDeny = createStandardButton("Deny Appeal");
+        btnDeny = createStandardButton("Deny Appeal");
         btnDeny.addActionListener(e -> handleAdjudicate(false));
 
         actionRow.add(chkSimulateSyncError);
@@ -1116,4 +1178,5 @@ class AppealService {
     public Appeal findAppealByCadn(String cadn) {
         return byCadn.get(cadn);
     }
+
 }
