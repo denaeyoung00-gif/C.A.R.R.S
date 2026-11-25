@@ -12,10 +12,15 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableModel;
 
 /**
@@ -38,12 +43,28 @@ public class PaymentTab implements FeatureTab {
     private final JLabel eligibility = new JLabel(" ");
     private final DefaultTableModel tableModel = new DefaultTableModel(
             new String[]{"ID", "Programme", "Benefit", "Amount", "Scheduled", "Paid on",
-                         "Status", "Verified", "Payee", "Cheque scan"}, 0) {
+                    "Status", "Verified", "Payee", "Cheque scan"}, 0) {
         @Override public boolean isCellEditable(int r, int c) { return false; }
     };
     private final JTable table = new JTable(tableModel);
     private final List<JButton> needsConstituent = new ArrayList<>();
     private final JButton summaryButton = new JButton("Payment summary");
+    // list of every constituent on the left; typing in the search bar filters it
+    private final DefaultTableModel peopleModel = new DefaultTableModel(new String[]{"ID", "Constituent", "TRN", "Status", "Payment due"}, 0) {
+        @Override public boolean isCellEditable(int r, int c) { return false; }
+    };
+    private final JTable peopleTable = new JTable(peopleModel);
+    private final Map<Integer, String> statusOf = new HashMap<>();
+    private final java.util.Set<Integer> dueIds = new java.util.HashSet<>();
+    private final JComboBox<String> statusFilter = new JComboBox<>(
+            new String[]{"All statuses", "Eligible", "Not eligible", "Payment due"});
+    private final JComboBox<String> sortBy = new JComboBox<>(
+            new String[]{"Sort: ID", "Sort: First name", "Sort: Last name", "Sort: TRN", "Sort: Status", "Sort: Payment due"});
+    private final JComboBox<String> sortOrder = new JComboBox<>(new String[]{"Ascending", "Descending"});
+    private final JLabel countLabel = new JLabel(" ");
+    private List<Applicant> everyone = List.of();
+    private List<Applicant> listed = List.of();
+    private boolean ignoreSelect = false;
     private StaffMember user;
     private Applicant current;
     private List<Payment> shown = List.of();
@@ -54,11 +75,43 @@ public class PaymentTab implements FeatureTab {
 
         // ---- search bar (step 1)
         JPanel search = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
-        search.add(new JLabel("Search constituent (name or ID):"));
+        search.add(new JLabel("Search constituent (name, ID or TRN):"));
         search.add(searchField);
         search.add(searchButton);
         searchButton.addActionListener(e -> onSearch());
         searchField.addActionListener(e -> onSearch());
+
+        // ---- every constituent, always visible (click one to select them)
+        peopleTable.setRowHeight(22);
+        peopleTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        int[] pw = {50, 260, 120, 120, 120};
+        for (int i = 0; i < pw.length; i++) peopleTable.getColumnModel().getColumn(i).setPreferredWidth(pw[i]);
+        peopleTable.getSelectionModel().addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting() || ignoreSelect) return;
+            int r = peopleTable.getSelectedRow();
+            if (r >= 0 && r < listed.size()) { current = listed.get(r); refresh(); }
+        });
+        searchField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override public void insertUpdate(DocumentEvent e) { filterPeople(); }
+            @Override public void removeUpdate(DocumentEvent e) { filterPeople(); }
+            @Override public void changedUpdate(DocumentEvent e) { filterPeople(); }
+        });
+        JScrollPane peoplePane = new JScrollPane(peopleTable);
+        java.awt.event.ActionListener refilter = e -> filterPeople();
+        statusFilter.addActionListener(refilter);
+        sortBy.addActionListener(refilter);
+        sortOrder.addActionListener(refilter);
+        JButton clear = new JButton("Clear filters");
+        clear.addActionListener(e -> {
+            searchField.setText("");
+            statusFilter.setSelectedIndex(0); sortBy.setSelectedIndex(0); sortOrder.setSelectedIndex(0);
+        });
+        search.add(statusFilter);
+        search.add(sortBy);
+        search.add(sortOrder);
+        search.add(clear);
+        peoplePane.setBorder(BorderFactory.createTitledBorder("All constituents - click one, or search to narrow the list"));
+        peoplePane.setPreferredSize(new Dimension(600, 320));
 
         constituentLabel.setFont(constituentLabel.getFont().deriveFont(Font.BOLD, 16f));
         JPanel info = new JPanel(new GridLayout(0, 1));
@@ -84,7 +137,15 @@ public class PaymentTab implements FeatureTab {
                 return this;
             }
         });
-        view.add(new JScrollPane(table), BorderLayout.CENTER);
+        JScrollPane paymentPane = new JScrollPane(table);
+        paymentPane.setBorder(BorderFactory.createTitledBorder("Payments of the selected constituent"));
+        JPanel listBox = new JPanel(new BorderLayout());
+        listBox.add(peoplePane, BorderLayout.CENTER);
+        listBox.add(countLabel, BorderLayout.SOUTH);
+        countLabel.setBorder(BorderFactory.createEmptyBorder(0, 12, 4, 0));
+        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, listBox, paymentPane);
+        split.setResizeWeight(0.55);
+        view.add(split, BorderLayout.CENTER);
 
         // ---- actions (steps 2-5, 7)
         JPanel buttons = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 8));
@@ -114,6 +175,97 @@ public class PaymentTab implements FeatureTab {
         current = null;
         searchField.setText("");
         showNothing();
+        loadPeople();
+    }
+
+    // ------------------------------------------------------------ the constituent list
+    private void loadPeople() {
+        everyone = allowed() ? repo.findAllApplicants() : List.of();
+        statusOf.clear();
+        dueIds.clear();
+        LocalDate today = LocalDate.now();
+        for (Applicant a : everyone) {
+            statusOf.put(a.getId(), service.getEligibleProgrammes(a.getId()).isEmpty() ? "Not eligible" : "Eligible");
+            for (Payment p : repo.findPaymentsByApplicant(a.getId()))
+                if (p.isDue(today)) { dueIds.add(a.getId()); break; }
+        }
+        filterPeople();
+    }
+
+    private static String firstName(Applicant a) {
+        String[] t = a.getName().trim().split("\\s+");
+        return t[0].toLowerCase();
+    }
+    private static String lastName(Applicant a) {
+        String[] t = a.getName().trim().split("\\s+");
+        return t[t.length - 1].toLowerCase();
+    }
+    private static String trnOf(Applicant a) { String t = a.getDetail("trn"); return t == null ? "" : t; }
+
+    private void filterPeople() {
+        String q = searchField.getText().trim().toLowerCase();
+        String want = (String) statusFilter.getSelectedItem();
+        List<Applicant> out = new ArrayList<>();
+        for (Applicant a : everyone) {
+            String st = statusOf.getOrDefault(a.getId(), "");
+            boolean textOk = q.isEmpty() || a.getName().toLowerCase().contains(q)
+                    || String.valueOf(a.getId()).equals(q) || trnOf(a).contains(q);
+            boolean statusOk = want == null || want.startsWith("All")
+                    || (want.equals("Payment due") ? dueIds.contains(a.getId()) : want.equals(st));
+            if (textOk && statusOk) out.add(a);
+        }
+        Comparator<Applicant> cmp;
+        switch (sortBy.getSelectedIndex()) {
+            case 1: cmp = Comparator.comparing(PaymentTab::firstName); break;
+            case 2: cmp = Comparator.comparing(PaymentTab::lastName); break;
+            case 3: cmp = Comparator.comparing(PaymentTab::trnOf); break;
+            case 4: cmp = Comparator.comparing((Applicant a) -> statusOf.getOrDefault(a.getId(), "")); break;
+            case 5: cmp = Comparator.comparing((Applicant a) -> dueIds.contains(a.getId()) ? "A" : "B"); break;
+            default: cmp = Comparator.comparingInt(Applicant::getId);
+        }
+        cmp = cmp.thenComparingInt(Applicant::getId);
+        if (sortOrder.getSelectedIndex() == 1) cmp = cmp.reversed();
+        out.sort(cmp);
+        listed = out;
+        ignoreSelect = true;
+        peopleModel.setRowCount(0);
+        for (Applicant a : out)
+            peopleModel.addRow(new Object[]{a.getId(), a.getName(), trnOf(a), statusOf.getOrDefault(a.getId(), ""),
+                    dueIds.contains(a.getId()) ? "Yes" : "No"});
+        countLabel.setText("Showing " + out.size() + " of " + everyone.size() + " constituents");
+        ignoreSelect = false;
+        if (out.size() == 1 && !q.isEmpty()) {            // searched for one person: only they are left
+            current = out.get(0);
+            selectInList(current);
+            refresh();
+        } else if (current != null && out.stream().noneMatch(x -> x.getId() == current.getId())) {
+            current = null;                                // the person was filtered away
+            showNothing();
+            if (out.isEmpty() && !q.isEmpty()) {
+                eligibility.setText("No constituent found for \"" + searchField.getText().trim() + "\".");
+                eligibility.setForeground(RED);
+            }
+        } else {
+            selectInList(current);
+            if (out.isEmpty() && !q.isEmpty() && allowed()) {
+                eligibility.setText("No constituent found for \"" + searchField.getText().trim() + "\".");
+                eligibility.setForeground(RED);
+            }
+        }
+    }
+
+    private void selectInList(Applicant a) {
+        boolean before = ignoreSelect;
+        ignoreSelect = true;
+        peopleTable.clearSelection();
+        if (a != null)
+            for (int i = 0; i < listed.size(); i++)
+                if (listed.get(i).getId() == a.getId()) {
+                    peopleTable.setRowSelectionInterval(i, i);
+                    peopleTable.scrollRectToVisible(peopleTable.getCellRect(i, 0, true));
+                    break;
+                }
+        ignoreSelect = before;
     }
 
     // ------------------------------------------------------------ helpers
@@ -143,7 +295,7 @@ public class PaymentTab implements FeatureTab {
                     + " is not authorised to view or manage payments.");
             eligibility.setForeground(RED);
         } else {
-            eligibility.setText("Search for a constituent by name or ID number to view and manage their payments.");
+            eligibility.setText("Pick a constituent from the list, or search by name or ID number, to view and manage their payments.");
             eligibility.setForeground(Color.DARK_GRAY);
         }
     }
@@ -151,33 +303,8 @@ public class PaymentTab implements FeatureTab {
     // ------------------------------------------------------------ step 1: search
     private void onSearch() {
         if (!allowed()) return;
-        String text = searchField.getText().trim();
-        if (text.isEmpty()) { error("Type a constituent's name or ID number first."); return; }
-        try {
-            List<Applicant> found = service.searchApplicants(user, text);
-            if (found.isEmpty()) {
-                current = null; showNothing();
-                eligibility.setText("No constituent found for \"" + text + "\".");
-                eligibility.setForeground(RED);
-                return;
-            }
-            Applicant pick = found.size() == 1 ? found.get(0) : choose(found);
-            if (pick == null) return;
-            current = pick;
-            refresh();
-        } catch (PaymentException e) { error(e.getMessage()); }
-    }
-
-    /** Several constituents matched: let the user pick one from a short list. */
-    private Applicant choose(List<Applicant> found) {
-        DefaultListModel<String> model = new DefaultListModel<>();
-        for (Applicant a : found) model.addElement(a.getId() + "  -  " + a.getName());
-        JList<String> list = new JList<>(model);
-        list.setSelectedIndex(0);
-        list.setVisibleRowCount(Math.min(found.size(), 10));
-        int r = JOptionPane.showConfirmDialog(view, new JScrollPane(list), found.size() + " constituents match - choose one",
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-        return (r == JOptionPane.OK_OPTION && list.getSelectedIndex() >= 0) ? found.get(list.getSelectedIndex()) : null;
+        if (searchField.getText().trim().isEmpty()) { error("Type a constituent's name, ID or TRN first."); return; }
+        filterPeople();
     }
 
     /** Reloads the eligibility banner and the payment table for the chosen constituent. */
@@ -335,8 +462,8 @@ public class PaymentTab implements FeatureTab {
         StringBuilder sb = new StringBuilder();
         for (PaymentChange c : service.getChanges(p.getId()))
             sb.append(c.getChangedAt().format(STAMP)).append("  ")
-              .append(c.getFieldName()).append(": ").append(c.getOldValue()).append(" -> ").append(c.getNewValue())
-              .append("  (").append(c.getReason()).append(")\n");
+                    .append(c.getFieldName()).append(": ").append(c.getOldValue()).append(" -> ").append(c.getNewValue())
+                    .append("  (").append(c.getReason()).append(")\n");
         if (sb.length() == 0) sb.append("No changes recorded for this payment.");
         showText("Change history for payment " + p.getId(), sb.toString());
     }
@@ -346,8 +473,8 @@ public class PaymentTab implements FeatureTab {
             StringBuilder sb = new StringBuilder();
             for (PaymentAudit a : service.getAuditTrail(user, current.getId()))
                 sb.append(a.getPerformedAt().format(STAMP)).append("  ").append(staffName(a.getPerformedBy()))
-                  .append("  |  payment ").append(a.getPaymentId()).append("  |  ").append(a.getAction())
-                  .append("  |  ").append(a.getDetails()).append("\n");
+                        .append("  |  payment ").append(a.getPaymentId()).append("  |  ").append(a.getAction())
+                        .append("  |  ").append(a.getDetails()).append("\n");
             if (sb.length() == 0) sb.append("No payment activity recorded for this constituent yet.");
             showText("Audit trail for " + current.getName(), sb.toString());
         } catch (PaymentException e) { error(e.getMessage()); }

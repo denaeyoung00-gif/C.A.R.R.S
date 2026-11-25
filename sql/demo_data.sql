@@ -81,6 +81,9 @@ INSERT INTO applicant (applicant_id, name, household_size, contact_number) VALUE
                                                                                (59,'Jermaine Wright','1','876-555-1413'),
                                                                                (60,'Lloyd Lewis','3','876-555-1420');
 
+-- sample 9-digit TRNs (Taxpayer Registration Numbers) so constituents can be filtered by TRN
+UPDATE applicant SET trn = LPAD(MOD(applicant_id * 7919531 + 104729317, 900000000) + 100000000, 9, '0');
+
 INSERT INTO enrolment (enrolment_id, applicant_id, programme_id, status, enrolled_at) VALUES
                                                                                           (1,1,1,'ACTIVE',DATE_SUB(NOW(), INTERVAL 120 DAY)),
                                                                                           (2,3,4,'ACTIVE',DATE_SUB(NOW(), INTERVAL 60 DAY)),
@@ -1037,6 +1040,27 @@ INSERT INTO application (application_id, applicant_id, programme_id, status, dec
                                                                                                         (38,38,3,'Disqualified',DATE_SUB(NOW(), INTERVAL 36 DAY),FALSE),
                                                                                                         (39,39,4,'Rejected',DATE_SUB(NOW(), INTERVAL 1 DAY),FALSE),
                                                                                                         (40,40,1,'Approved',DATE_SUB(NOW(), INTERVAL 17 DAY),FALSE);
+INSERT INTO application (application_id, applicant_id, programme_id, status, decision_date, locked) VALUES
+                                                                                                        (41,41,2,'Rejected',DATE_SUB(NOW(), INTERVAL 6 DAY),FALSE),
+                                                                                                        (42,42,3,'Disqualified',DATE_SUB(NOW(), INTERVAL 13 DAY),FALSE),
+                                                                                                        (43,43,4,'Rejected',DATE_SUB(NOW(), INTERVAL 24 DAY),FALSE),
+                                                                                                        (44,44,1,'Approved',DATE_SUB(NOW(), INTERVAL 33 DAY),FALSE),
+                                                                                                        (45,45,2,'Rejected',DATE_SUB(NOW(), INTERVAL 2 DAY),FALSE),
+                                                                                                        (46,46,3,'Disqualified',DATE_SUB(NOW(), INTERVAL 19 DAY),FALSE),
+                                                                                                        (47,47,4,'Rejected',DATE_SUB(NOW(), INTERVAL 40 DAY),FALSE),
+                                                                                                        (48,48,1,'Approved',DATE_SUB(NOW(), INTERVAL 8 DAY),FALSE),
+                                                                                                        (49,49,2,'Rejected',DATE_SUB(NOW(), INTERVAL 27 DAY),FALSE),
+                                                                                                        (50,50,3,'Disqualified',DATE_SUB(NOW(), INTERVAL 15 DAY),FALSE),
+                                                                                                        (51,51,4,'Rejected',DATE_SUB(NOW(), INTERVAL 50 DAY),FALSE),
+                                                                                                        (52,52,1,'Approved',DATE_SUB(NOW(), INTERVAL 4 DAY),FALSE),
+                                                                                                        (53,53,2,'Rejected',DATE_SUB(NOW(), INTERVAL 21 DAY),FALSE),
+                                                                                                        (54,54,3,'Disqualified',DATE_SUB(NOW(), INTERVAL 37 DAY),FALSE),
+                                                                                                        (55,55,4,'Rejected',DATE_SUB(NOW(), INTERVAL 11 DAY),FALSE),
+                                                                                                        (56,56,1,'Approved',DATE_SUB(NOW(), INTERVAL 29 DAY),FALSE),
+                                                                                                        (57,57,2,'Rejected',DATE_SUB(NOW(), INTERVAL 1 DAY),FALSE),
+                                                                                                        (58,58,3,'Disqualified',DATE_SUB(NOW(), INTERVAL 17 DAY),FALSE),
+                                                                                                        (59,59,4,'Rejected',DATE_SUB(NOW(), INTERVAL 43 DAY),FALSE),
+                                                                                                        (60,60,1,'Approved',DATE_SUB(NOW(), INTERVAL 9 DAY),FALSE);
 -- Approved applications cannot be appealed, a few already carry an appeal
 INSERT INTO appeal (cadn, application_id, constituency_code, grounds, justification, status, lodged_by, lodged_at) VALUES
     ('CADN-101', 5, 'CENTRAL', 'INCORRECT_INCOME_ASSESSMENT', 'The household income was assessed using last year payslips; the attached letter shows the new, lower income of the household.', 'APPEAL_PENDING_REVIEW', 'Alexia James', DATE_SUB(NOW(), INTERVAL 2 DAY));

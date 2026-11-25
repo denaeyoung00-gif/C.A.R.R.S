@@ -12,6 +12,7 @@ CREATE TABLE staff_member (
 CREATE TABLE applicant (
                            applicant_id   INT PRIMARY KEY AUTO_INCREMENT,
                            name           VARCHAR(100) NOT NULL,
+                           trn            VARCHAR(9) NULL,
                            household_size VARCHAR(10) NULL,
                            contact_number VARCHAR(20) NULL
 );

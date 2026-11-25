@@ -363,6 +363,7 @@ public class MySqlCarrsRepository implements CarrsRepository {
         Applicant a = new Applicant(rs.getInt("applicant_id"), rs.getString("name"));
         a.with("household_size", rs.getString("household_size"));
         a.with("contact_number", rs.getString("contact_number"));
+        a.with("trn", rs.getString("trn"));
         return a;
     }
 
