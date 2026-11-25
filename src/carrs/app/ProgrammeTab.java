@@ -26,7 +26,7 @@ public class ProgrammeTab implements FeatureTab {
         rootPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
         // header: title + "+ New programme"
-        JLabel title = new JLabel("Programmes");
+        JLabel title = new JLabel("Programme Management");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 20f));
 
         JButton addButton = new JButton("+ New programme");

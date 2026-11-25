@@ -30,4 +30,15 @@ public interface CarrsRepository {
     Payment findLivePayment(int applicantId, int programmeId, BenefitType type, LocalDate scheduledDate);
     List<Payment> findCompletedPaymentsBetween(LocalDate from, LocalDate to);
     List<PaymentChange> findPaymentChanges(int paymentId);
+
+
+//     // ---- Programme Management
+//    /** Saves a new programme and returns it with the id the database assigned. */
+//    Programme saveProgramme(Programme programme);
+//    /** Updates an existing programme in place. */
+//    void updateProgramme(Programme programme);
+//    /** Deletes a programme by id. Returns true if a row was removed. */
+//    boolean deleteProgramme(int programmeId);
+//    /** All programmes, ordered by id. */
+//    List<Programme> findAllProgrammes();
 }

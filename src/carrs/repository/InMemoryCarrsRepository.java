@@ -15,7 +15,7 @@ public class InMemoryCarrsRepository implements CarrsRepository {
     private int nextPaymentId = 1;
     private int nextAuditId = 1;
     private int nextChangeId = 1;
-    public boolean failOnSave = false;   // lets a test simulate a database crash
+    public boolean failOnSave = false;
 
     private final List<StaffMember> staffList = new ArrayList<>();
     public void add(StaffMember s) { staffList.add(s); }
