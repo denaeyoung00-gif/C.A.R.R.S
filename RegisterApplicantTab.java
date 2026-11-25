@@ -131,7 +131,7 @@ public class RegisterApplicantTab implements FeatureTab {
              .with("dependents", dependentsField.getText().trim())
              .with("household_size", householdField.getText().trim());
 
-            Application app = new Application(0, "APP-" + System.currentTimeMillis(), 0, prog.getId(),
+            Application app = new Application(0, refNo, 0, prog.getId(),
                 assistanceField.getText().trim(), reasonArea.getText().trim(), 
                 ApplicationStatus.COMPLETED, null, null, null, user.getId(), null, docField.getText().trim());
 
