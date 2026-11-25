@@ -24,7 +24,7 @@ public class ProgrammeListPanel extends JPanel {
             add(empty);
         } else {
             for (Program p : all) {
-                ProgrammeCard card = new ProgrammeCard(p);
+                ProgrammeCard card = new ProgrammeCard(p, service, this);
                 card.setAlignmentX(LEFT_ALIGNMENT);
                 add(card);
                 add(Box.createVerticalStrut(8));
