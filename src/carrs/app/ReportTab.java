@@ -160,7 +160,9 @@ public class ReportTab implements FeatureTab {
     }
 
     private void onBenefits() {
-        run(() -> { BenefitsReport r = new BenefitsReport(); r.generateBenefitsReport(); return r; });
+        String id = ask("Please enter the programme ID:", "Benefits report");
+        if (id == null) return;
+        run(() -> { BenefitsReport r = new BenefitsReport(); r.generateBenefitsReport(id); return r; });
     }
 
     private void onTimeline() {
@@ -381,74 +383,80 @@ class BenefitsReport extends Report {
         public BenefitsException(String message) { super(message); }
     }
 
+    private String programID;
     private int receivedCount, pendingCount;
 
-    public void generateBenefitsReport() throws BenefitsException {
+    public void generateBenefitsReport(String programID) throws BenefitsException {
+        int id = Integer.parseInt(programID.trim());
+
         String url = "jdbc:mysql://localhost:3306/carrs";
         String user = "root";
         String password = "";
-        String sql = "SELECT p.name AS programme, pay.amount, pay.status FROM payment pay "
-                + "JOIN programme p ON p.programme_id = pay.programme_id";
+        String checkSql = "SELECT name, provides_benefits FROM programme WHERE programme_id = ?";
+        String sql = "SELECT a.applicant_id, a.name, pay.status FROM payment pay "
+                + "JOIN applicant a ON a.applicant_id = pay.applicant_id "
+                + "WHERE pay.programme_id = ? ORDER BY a.name";
 
-        int received = 0, pending = 0, failed = 0, total = 0;
-        BigDecimal distributedTotal = BigDecimal.ZERO;
-        Map<String, Integer> byStatus = new TreeMap<>();
-        Map<String, int[]> byProgramme = new TreeMap<>();
+        String programmeName;
+        boolean providesBenefits;
+        Map<Integer, String> names = new TreeMap<>();
+        Map<Integer, Boolean> received = new TreeMap<>();
 
-        try (Connection conn = DriverManager.getConnection(url, user, password);
-             PreparedStatement stmt = conn.prepareStatement(sql);
-             ResultSet rs = stmt.executeQuery()) {
-            while (rs.next()) {
-                total++;
-                String status = rs.getString("status");
-                BigDecimal amount = rs.getBigDecimal("amount");
-                int[] counts = byProgramme.computeIfAbsent(rs.getString("programme"), k -> new int[3]);
+        try (Connection conn = DriverManager.getConnection(url, user, password)) {
 
-                byStatus.merge(status, 1, Integer::sum);
-                counts[0]++;
-                if ("COMPLETED".equals(status)) {
-                    received++;
-                    counts[1]++;
-                    if (amount != null) distributedTotal = distributedTotal.add(amount);
-                } else if ("FAILED".equals(status)) {
-                    failed++;
-                    counts[2]++;
-                } else {
-                    pending++;
+            try (PreparedStatement check = conn.prepareStatement(checkSql)) {
+                check.setInt(1, id);
+                try (ResultSet rs = check.executeQuery()) {
+                    if (!rs.next())
+                        throw new BenefitsException("Programme " + programID + " does not exist.");
+                    programmeName = rs.getString("name");
+                    providesBenefits = rs.getBoolean("provides_benefits");
+                }
+            }
+
+            if (!providesBenefits)
+                throw new BenefitsException("Programme " + programmeName + " does not provide benefits.");
+
+            try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+                stmt.setInt(1, id);
+                try (ResultSet rs = stmt.executeQuery()) {
+                    while (rs.next()) {
+                        int applicantId = rs.getInt("applicant_id");
+                        names.put(applicantId, rs.getString("name"));
+                        received.merge(applicantId, "COMPLETED".equals(rs.getString("status")), Boolean::logicalOr);
+                    }
                 }
             }
         } catch (SQLException e) {
             throw new BenefitsException("Database error: " + e.getMessage());
         }
 
-        if (total == 0)
-            throw new BenefitsException("There are no benefit or payment records to report on.");
+        if (received.isEmpty())
+            throw new BenefitsException("Programme " + programmeName
+                    + " has not issued any benefits, so there are no records of who did or did not receive them.");
 
-        this.receivedCount = received;
-        this.pendingCount = pending;
+        int gotBenefit = 0, notYet = 0;
+        for (boolean got : received.values()) {
+            if (got) gotBenefit++;
+            else notYet++;
+        }
+
+        this.programID = programID;
+        this.receivedCount = gotBenefit;
+        this.pendingCount = notYet;
 
         List<String> out = new ArrayList<>();
-        out.add("=== BENEFITS & PAYMENTS REPORT ===");
-        out.add("Total payments recorded: " + total);
+        out.add("=== BENEFITS REPORT: " + programmeName + " (ID " + programID + ") ===");
+        out.add("Applicants with benefit records: " + received.size());
         out.add("Received benefits: " + receivedCount);
-        out.add("Still to receive (pending or processed): " + pendingCount);
-        out.add("Failed: " + failed);
-        out.add("Total amount distributed: $" + distributedTotal.toPlainString());
+        out.add("Did not receive benefits yet: " + pendingCount);
         out.add("");
-        out.add("--- By status ---");
-        for (Map.Entry<String, Integer> e : byStatus.entrySet())
-            out.add("  " + e.getKey() + ": " + e.getValue());
-        out.add("");
-        out.add("--- By programme ---");
-        for (Map.Entry<String, int[]> e : byProgramme.entrySet())
-            out.add("  " + e.getKey() + ": " + e.getValue()[0] + " payments, "
-                    + e.getValue()[1] + " received, "
-                    + (e.getValue()[0] - e.getValue()[1] - e.getValue()[2]) + " still to receive, "
-                    + e.getValue()[2] + " failed");
+        for (Map.Entry<Integer, Boolean> e : received.entrySet())
+            out.add(e.getKey() + " | " + names.get(e.getKey()) + " | "
+                    + (e.getValue() ? "Received" : "Not yet received"));
         this.content = out;
     }
 }
-
 class ApplicationTimelineReport extends Report {
 
     public static class TimelineException extends Exception {
