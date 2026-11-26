@@ -2,6 +2,7 @@ package carrs.app;
 
 import carrs.model.*;
 import carrs.repository.CarrsRepository;
+import carrs.repository.Database;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.FlowLayout;
@@ -10,7 +11,6 @@ import java.awt.GridLayout;
 import java.awt.print.PrinterException;
 import java.math.BigDecimal;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -182,6 +182,12 @@ public class ReportTab implements FeatureTab {
     }
 }
 
+class ReportDb {
+    static Connection open() throws SQLException {
+        return Database.connect();
+    }
+}
+
 abstract class Report {
     protected String reportID, title, generatedBy;
     protected LocalDate dateGenerated;
@@ -230,9 +236,6 @@ class QuarterlyReport extends Report {
         LocalDate start = LocalDate.of(year, (quarter - 1) * 3 + 1, 1);
         LocalDate end = start.plusMonths(3);
 
-        String url = "jdbc:mysql://localhost:3306/carrs";
-        String user = "root";
-        String password = "";
         String applicationSql = "SELECT p.name AS programme, ap.status FROM application ap "
                 + "JOIN programme p ON p.programme_id = ap.programme_id "
                 + "WHERE ap.decision_date >= ? AND ap.decision_date < ?";
@@ -243,7 +246,7 @@ class QuarterlyReport extends Report {
         BigDecimal distributed = BigDecimal.ZERO;
         Map<String, Integer> perProgramme = new TreeMap<>();
 
-        try (Connection conn = DriverManager.getConnection(url, user, password)) {
+        try (Connection conn = ReportDb.open()) {
 
             try (PreparedStatement stmt = conn.prepareStatement(applicationSql)) {
                 stmt.setDate(1, java.sql.Date.valueOf(start));
@@ -306,9 +309,6 @@ class ProgramReport extends Report {
     public void generateBy(String programID) throws ProgramException {
         int id = Integer.parseInt(programID.trim());
 
-        String url = "jdbc:mysql://localhost:3306/carrs";
-        String user = "root";
-        String password = "";
         String checkSql = "SELECT name FROM programme WHERE programme_id = ?";
         String sql = "SELECT a.applicant_id, a.name, a.trn, a.contact_number, ap.status, "
                 + "(SELECT COUNT(*) FROM appeal p WHERE p.application_id = ap.application_id "
@@ -320,7 +320,7 @@ class ProgramReport extends Report {
         int accepted = 0, rejected = 0, inProgress = 0;
         List<String> rows = new ArrayList<>();
 
-        try (Connection conn = DriverManager.getConnection(url, user, password)) {
+        try (Connection conn = ReportDb.open()) {
 
             try (PreparedStatement check = conn.prepareStatement(checkSql)) {
                 check.setInt(1, id);
@@ -389,9 +389,6 @@ class BenefitsReport extends Report {
     public void generateBenefitsReport(String programID) throws BenefitsException {
         int id = Integer.parseInt(programID.trim());
 
-        String url = "jdbc:mysql://localhost:3306/carrs";
-        String user = "root";
-        String password = "";
         String checkSql = "SELECT name, provides_benefits FROM programme WHERE programme_id = ?";
         String sql = "SELECT a.applicant_id, a.name, pay.status FROM payment pay "
                 + "JOIN applicant a ON a.applicant_id = pay.applicant_id "
@@ -402,7 +399,7 @@ class BenefitsReport extends Report {
         Map<Integer, String> names = new TreeMap<>();
         Map<Integer, Boolean> received = new TreeMap<>();
 
-        try (Connection conn = DriverManager.getConnection(url, user, password)) {
+        try (Connection conn = ReportDb.open()) {
 
             try (PreparedStatement check = conn.prepareStatement(checkSql)) {
                 check.setInt(1, id);
@@ -457,6 +454,7 @@ class BenefitsReport extends Report {
         this.content = out;
     }
 }
+
 class ApplicationTimelineReport extends Report {
 
     public static class TimelineException extends Exception {
@@ -470,9 +468,6 @@ class ApplicationTimelineReport extends Report {
     public void generateTimeline(String applicationID) throws TimelineException {
         int id = Integer.parseInt(applicationID.trim());
 
-        String url = "jdbc:mysql://localhost:3306/carrs";
-        String user = "root";
-        String password = "";
         String sql = "SELECT ap.status, ap.decision_date, e.enrolled_at, pay.scheduled_date, pay.distributed_date "
                 + "FROM application ap "
                 + "LEFT JOIN enrolment e ON e.applicant_id = ap.applicant_id AND e.programme_id = ap.programme_id "
@@ -483,7 +478,7 @@ class ApplicationTimelineReport extends Report {
         String status = null;
         LocalDate decided = null, enrolled = null, scheduled = null, received = null;
 
-        try (Connection conn = DriverManager.getConnection(url, user, password);
+        try (Connection conn = ReportDb.open();
              PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setInt(1, id);
             try (ResultSet rs = stmt.executeQuery()) {
@@ -548,9 +543,6 @@ class TransferReport extends Report {
     private List<Transfer> transferlist;
 
     public void generateTransferReport() throws TransferException {
-        String url = "jdbc:mysql://localhost:3306/carrs";
-        String user = "root";
-        String password = "";
         String sql = "SELECT a.applicant_id, a.name, p1.name AS original_program, p2.name AS transferred_program "
                 + "FROM enrolment e2 "
                 + "JOIN enrolment e1 ON e1.enrolment_id = e2.transferred_from "
@@ -560,7 +552,7 @@ class TransferReport extends Report {
                 + "ORDER BY e2.enrolled_at";
 
         List<Transfer> found = new ArrayList<>();
-        try (Connection conn = DriverManager.getConnection(url, user, password);
+        try (Connection conn = ReportDb.open();
              PreparedStatement stmt = conn.prepareStatement(sql);
              ResultSet rs = stmt.executeQuery()) {
             while (rs.next()) {
