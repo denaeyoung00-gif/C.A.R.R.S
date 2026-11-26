@@ -14,7 +14,7 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 
 /**
- * Programmes tab (Programme Management). Lists every programme from the database and lets Office Staff,
+ * Programes tab (Programe Management). Lists every programme from the database and lets Office Staff,
  * Office Manager and MP create, edit and delete them. Attendants can only look.
  * Programmes are saved in the "programme" table, so Register Applicant, Enrolment and Payments see them too.
  */
