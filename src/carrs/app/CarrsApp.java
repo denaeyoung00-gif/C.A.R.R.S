@@ -76,8 +76,7 @@ public class CarrsApp extends JFrame {
         features.add(new PlaceholderTab("Register Applicant", "Justin Bent",
                 "FTR-GOV-004 Program Administration and Approval"));
         features.add(new PlaceholderTab("Programme Management", "Gareth Chambers", "FTR-GOV-005 Program Management"));
-        features.add(
-                new PlaceholderTab("Enrolment Management", "Latania Johnson", "FTR-GOV-008 Enrollment Management"));
+        features.add(new EnrolmentManagementTab(repo)); //Enrollment Managment: Latania johnson
         features.add(new AppealsDisputesTab(repo));
         features.add(new PlaceholderTab("Reports", "Denae Young", "FTR-GOV-006 Generate Report"));
         features.add(new PaymentTab(repo)); // Payment and Benefit Management: Nashella Fairweather
