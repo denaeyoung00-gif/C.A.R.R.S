@@ -40,4 +40,16 @@ public interface CarrsRepository {
     void saveAppealDecision(AppealRecord appeal, Application application);
     /** Every appeal lodged so far, oldest first, with its documents. */
     List<AppealRecord> findAppeals();
+
+     // ----- Applications & Approvals -----
+    void createApplicantAndApplication(Applicant applicant, ProgrammeApplication application, StaffMember by);
+    boolean applicationExists(String idType, String idNumber, int programmeId);
+    List<ProgrammeApplication> findApplicationsByStatus(ApplicationStatus status);
+    void decideApplication(int applicationId, ApplicationStatus decision, String rejectionReason, StaffMember by);
+
+    // ----- Program Management -----
+    void createProgramme(String name, ProgrammeStatus status, int capacity, boolean providesBenefits, List<String> criteria, StaffMember by);
+    void deactivateProgramme(int programmeId, StaffMember by);
+
+    List<Programme> findAllProgrammes();
 }
