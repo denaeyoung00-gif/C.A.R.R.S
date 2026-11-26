@@ -260,7 +260,7 @@ public class MySqlCarrsRepository implements CarrsRepository {
 
     // ============ Appeals & Disputes ============
     @Override public List<Application> findApplications() {
-        String sql = "SELECT a.*, ap.name AS applicant_name, pr.name AS programme_name FROM application a "
+        String sql = "SELECT a.*, ap.name AS applicant_name, pr.name AS programme_name FROM programme_application a "
                 + "JOIN applicant ap ON ap.applicant_id = a.applicant_id "
                 + "JOIN programme pr ON pr.programme_id = a.programme_id ORDER BY a.application_id";
         List<Application> out = new ArrayList<>();
