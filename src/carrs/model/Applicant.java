@@ -16,4 +16,8 @@ public class Applicant {
         String v = details.get(field);
         return v != null && !v.trim().isEmpty();
     }
+
+    public Map<String, String> getDetails() {
+        return details;
+    }
 }
