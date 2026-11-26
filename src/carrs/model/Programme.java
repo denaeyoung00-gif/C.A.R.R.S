@@ -7,7 +7,8 @@ public class Programme {
     private final int id; private final String name;
     private final ProgrammeStatus status; private final int capacity;
     private final Set<String> requiredFields = new HashSet<>();
-    private boolean providesBenefits = true;   // does this programme pay money or stipends?
+    private boolean providesBenefits = true; // does this programme pay money or stipends?
+
     public Programme(int id, String name, ProgrammeStatus status, int capacity) {
         this.id = id; this.name = name; this.status = status; this.capacity = capacity;
     }
