@@ -410,4 +410,129 @@ public class MySqlCarrsRepository implements CarrsRepository {
     private static void setInteger(PreparedStatement ps, int i, Integer v) throws SQLException {
         if (v == null) ps.setNull(i, Types.INTEGER); else ps.setInt(i, v);
     }
+
+    // ============ Registration & Approval of programme applications ============
+    @Override public List<Programme> findAllProgrammes() {
+        List<Programme> out = new ArrayList<>();
+        try (Connection c = Database.connect(); Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT * FROM programme ORDER BY name")) {
+            while (rs.next()) out.add(toProgramme(rs));
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
+    }
+
+    @Override public void createApplicantAndApplication(Applicant a, ProgrammeApplication app, StaffMember by) {
+        try (Connection c = Database.connect()) {
+            c.setAutoCommit(false);
+            try {
+                int applicantId;
+                String idType = a.getDetail("id_type"), idNumber = a.getDetail("id_number");
+                String trn = ("TRN".equals(idType) && idNumber != null && idNumber.length() <= 9) ? idNumber : null;
+                try (PreparedStatement ps = c.prepareStatement("INSERT INTO applicant (name, household_size, "
+                        + "contact_number, trn, id_type, id_number, date_of_birth, address, employment_status, "
+                        + "monthly_income, dependents) VALUES (?,?,?,?,?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                    ps.setString(1, a.getName());
+                    ps.setString(2, a.getDetail("household_size"));
+                    ps.setString(3, a.getDetail("contact_number"));
+                    ps.setString(4, trn);
+                    ps.setString(5, idType);
+                    ps.setString(6, idNumber);
+                    String dob = a.getDetail("date_of_birth");
+                    if (dob == null || dob.isBlank()) ps.setNull(7, Types.DATE); else ps.setDate(7, java.sql.Date.valueOf(dob));
+                    ps.setString(8, a.getDetail("address"));
+                    ps.setString(9, a.getDetail("employment_status"));
+                    String inc = a.getDetail("monthly_income");
+                    ps.setBigDecimal(10, new java.math.BigDecimal(inc == null || inc.isBlank() ? "0" : inc));
+                    String dep = a.getDetail("dependents");
+                    ps.setInt(11, Integer.parseInt(dep == null || dep.isBlank() ? "0" : dep));
+                    ps.executeUpdate();
+                    try (ResultSet keys = ps.getGeneratedKeys()) { keys.next(); applicantId = keys.getInt(1); }
+                }
+                int applicationId;
+                try (PreparedStatement ps = c.prepareStatement("INSERT INTO programme_application (reference_no, "
+                        + "applicant_id, programme_id, assistance_requested, reason_for_applying, status, created_by, "
+                        + "supporting_doc_path) VALUES (?,?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                    ps.setString(1, app.getReferenceNo()); ps.setInt(2, applicantId); ps.setInt(3, app.getProgrammeId());
+                    ps.setString(4, app.getAssistanceRequested()); ps.setString(5, app.getReasonForApplying());
+                    ps.setString(6, app.getStatus().name()); ps.setInt(7, by.getId());
+                    String doc = app.getSupportingDocPath();
+                    ps.setString(8, doc == null || doc.isBlank() ? null : doc);
+                    ps.executeUpdate();
+                    try (ResultSet keys = ps.getGeneratedKeys()) { keys.next(); applicationId = keys.getInt(1); }
+                }
+                app.setId(applicationId);
+                applicationAudit(c, applicationId, app.getProgrammeId(), "SUBMITTED",
+                        "Application " + app.getReferenceNo() + " submitted for " + a.getName(), by.getId());
+                c.commit();
+            } catch (SQLException | RuntimeException e) { c.rollback(); throw e; }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    @Override public List<ProgrammeApplication> findApplicationsByStatus(ApplicationStatus status) {
+        List<ProgrammeApplication> out = new ArrayList<>();
+        try (Connection c = Database.connect(); PreparedStatement ps = c.prepareStatement(
+                "SELECT * FROM programme_application WHERE status = ? ORDER BY created_at, application_id")) {
+            ps.setString(1, status.name());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int by = rs.getInt("decided_by");
+                    Integer decidedBy = rs.wasNull() ? null : by;
+                    Timestamp decidedAt = rs.getTimestamp("decided_at");
+                    Timestamp createdAt = rs.getTimestamp("created_at");
+                    out.add(new ProgrammeApplication(rs.getInt("application_id"), rs.getString("reference_no"),
+                            rs.getInt("applicant_id"), rs.getInt("programme_id"), rs.getString("assistance_requested"),
+                            rs.getString("reason_for_applying"), ApplicationStatus.valueOf(rs.getString("status")),
+                            rs.getString("rejection_reason"), decidedBy,
+                            decidedAt == null ? null : decidedAt.toLocalDateTime(), rs.getInt("created_by"),
+                            createdAt == null ? null : createdAt.toLocalDateTime(), rs.getString("supporting_doc_path")));
+                }
+            }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
+    }
+
+    @Override public void decideApplication(int applicationId, ApplicationStatus decision, String reason, StaffMember by) {
+        try (Connection c = Database.connect()) {
+            c.setAutoCommit(false);
+            try {
+                int programmeId, applicantId;
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT programme_id, applicant_id FROM programme_application WHERE application_id = ? AND status = 'COMPLETED' FOR UPDATE")) {
+                    ps.setInt(1, applicationId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) throw new IllegalStateException("That application was not found or has already been decided.");
+                        programmeId = rs.getInt(1);
+                        applicantId = rs.getInt(2);
+                    }
+                }
+                try (PreparedStatement ps = c.prepareStatement("UPDATE programme_application SET status = ?, "
+                        + "rejection_reason = ?, decided_by = ?, decided_at = NOW() WHERE application_id = ?")) {
+                    ps.setString(1, decision.name());
+                    ps.setString(2, decision == ApplicationStatus.REJECTED ? reason : null);
+                    ps.setInt(3, by.getId()); ps.setInt(4, applicationId);
+                    ps.executeUpdate();
+                }
+                // also record the decision where the Appeals & Disputes tab reads it from
+                try (PreparedStatement ps = c.prepareStatement("INSERT INTO application "
+                        + "(applicant_id, programme_id, status, decision_date) VALUES (?,?,?,NOW())")) {
+                    ps.setInt(1, applicantId); ps.setInt(2, programmeId);
+                    ps.setString(3, decision == ApplicationStatus.REJECTED ? "Rejected" : "Approved");
+                    ps.executeUpdate();
+                }
+                applicationAudit(c, applicationId, programmeId, decision.name(),
+                        decision == ApplicationStatus.REJECTED ? "Rejected: " + reason : "Approved", by.getId());
+                c.commit();
+            } catch (SQLException | RuntimeException e) { c.rollback(); throw e; }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    private void applicationAudit(Connection c, int applicationId, int programmeId, String action,
+                                  String details, int staffId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("INSERT INTO programme_application_audit "
+                + "(application_id, programme_id, action, details, performed_by) VALUES (?,?,?,?,?)")) {
+            ps.setInt(1, applicationId); ps.setInt(2, programmeId); ps.setString(3, action);
+            ps.setString(4, details); ps.setInt(5, staffId);
+            ps.executeUpdate();
+        }
+    }
 }

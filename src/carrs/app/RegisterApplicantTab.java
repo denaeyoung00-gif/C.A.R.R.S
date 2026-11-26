@@ -12,6 +12,8 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 public class RegisterApplicantTab implements FeatureTab {
     private final CarrsRepository repo;
     private final JPanel view = new JPanel(new BorderLayout(10, 10));
+    private final JPanel root = new JPanel(new BorderLayout());   // form on top, approvals underneath
+    private final ApprovalTab approval;
     private StaffMember user;
 
     private final JTextField nameField = new JTextField(25);
@@ -32,6 +34,7 @@ public class RegisterApplicantTab implements FeatureTab {
 
     public RegisterApplicantTab(CarrsRepository repo) {
         this.repo = repo;
+        this.approval = new ApprovalTab(repo);
         view.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
         JPanel form = new JPanel();
@@ -91,14 +94,22 @@ public class RegisterApplicantTab implements FeatureTab {
             Programme p = (Programme) programmeBox.getSelectedItem();
             if (p != null) assistanceField.setText(p.getName());
         });
+
+        // put the Approve Applications table underneath the form
+        approval.getView().setBorder(BorderFactory.createTitledBorder("Approve Applications"));
+        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, view, approval.getView());
+        split.setResizeWeight(0.65);
+        split.setContinuousLayout(true);
+        root.add(split, BorderLayout.CENTER);
     }
 
     @Override public String getTitle() { return "Register Applicant"; }
-    @Override public JComponent getView() { return view; }
+    @Override public JComponent getView() { return root; }
 
     @Override
     public void onUserChanged(StaffMember u) {
         this.user = u;
+        approval.onUserChanged(u);
         programmeBox.removeAllItems();
         for (Programme p : repo.findAllProgrammes()) programmeBox.addItem(p);
     }
@@ -152,6 +163,7 @@ public class RegisterApplicantTab implements FeatureTab {
             repo.createApplicantAndApplication(a, app, user);
             JOptionPane.showMessageDialog(view, "Application saved successfully!");
             clear();
+            approval.onUserChanged(user);
         } catch (Exception ex) {
             ex.printStackTrace(); // <--- CRITICAL: Look at your VS Code terminal after clicking save
             JOptionPane.showMessageDialog(view, "Error: " + ex.getMessage(), "Database Error", JOptionPane.ERROR_MESSAGE);

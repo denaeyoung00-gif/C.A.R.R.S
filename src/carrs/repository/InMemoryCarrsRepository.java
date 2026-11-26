@@ -120,4 +120,31 @@ public class InMemoryCarrsRepository implements CarrsRepository {
         applications.put(app.getId(), app);
     }
     @Override public List<AppealRecord> findAppeals() { return new ArrayList<>(appeals.values()); }
+
+    // ---- Registration & Approval of programme applications
+    private final Map<Integer, ProgrammeApplication> programmeApplications = new LinkedHashMap<>();
+    private int nextApplicantId = 1000;
+    private int nextProgrammeApplicationId = 1;
+
+    @Override public List<Programme> findAllProgrammes() { return new ArrayList<>(programmes.values()); }
+    @Override public void createApplicantAndApplication(Applicant a, ProgrammeApplication app, StaffMember by) {
+        if (failOnSave) throw new RuntimeException("database down");
+        Applicant saved = new Applicant(nextApplicantId++, a.getName());
+        applicants.put(saved.getId(), saved);
+        app.setId(nextProgrammeApplicationId++);
+        programmeApplications.put(app.getId(), app);
+    }
+    @Override public List<ProgrammeApplication> findApplicationsByStatus(ApplicationStatus status) {
+        List<ProgrammeApplication> out = new ArrayList<>();
+        for (ProgrammeApplication p : programmeApplications.values()) if (p.getStatus() == status) out.add(p);
+        return out;
+    }
+    @Override public void decideApplication(int applicationId, ApplicationStatus decision, String reason, StaffMember by) {
+        ProgrammeApplication p = programmeApplications.get(applicationId);
+        if (p == null || p.getStatus() != ApplicationStatus.COMPLETED)
+            throw new IllegalStateException("That application was not found or has already been decided.");
+        p.setStatus(decision);
+        p.setRejectionReason(decision == ApplicationStatus.REJECTED ? reason : null);
+    }
+
 }

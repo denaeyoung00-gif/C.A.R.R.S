@@ -81,7 +81,7 @@ public class EnrolmentManagementTab extends EnrolmentManagement implements Featu
         nav.setBorder(BorderFactory.createMatteBorder(0,0,1,0, ORANGE_BORDER));
 
         JButton btnView = makeNavButton ("View Enrollments");
-        JButton btnCreate = makeNavButton ("Create Enrollment");
+//        JButton btnCreate = makeNavButton ("Create Enrollment");
         JButton btnEdit = makeNavButton ("Edit Enrollment");
         JButton btnTrack = makeNavButton ("Track Enrollment");
         JButton btnSearch = makeNavButton ("Search For Enrollment");
@@ -91,13 +91,13 @@ public class EnrolmentManagementTab extends EnrolmentManagement implements Featu
             cardLayout.show(cardsPanel, CARD_VIEW);
         });
 
-        btnCreate.addActionListener(e -> cardLayout.show(cardsPanel, CARD_CREATE));
+//        btnCreate.addActionListener(e -> cardLayout.show(cardsPanel, CARD_CREATE));
         btnEdit.addActionListener(e -> cardLayout.show(cardsPanel, CARD_EDIT));
         btnTrack.addActionListener(e -> cardLayout.show(cardsPanel, CARD_TRACK));
         btnSearch.addActionListener(e -> cardLayout.show(cardsPanel, CARD_SEARCH));
 
         nav.add(btnView);
-        nav.add(btnCreate);
+//        nav.add(btnCreate);
         nav.add(btnEdit);
         nav.add(btnTrack);
         nav.add(btnSearch);

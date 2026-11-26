@@ -40,4 +40,13 @@ public interface CarrsRepository {
     void saveAppealDecision(AppealRecord appeal, Application application);
     /** Every appeal lodged so far, oldest first, with its documents. */
     List<AppealRecord> findAppeals();
+
+    // ---- Registration & Approval of programme applications
+    List<Programme> findAllProgrammes();
+    /** ATOMIC: save the new applicant, their application and an audit line together, or none. */
+    void createApplicantAndApplication(Applicant applicant, ProgrammeApplication application, StaffMember by);
+    List<ProgrammeApplication> findApplicationsByStatus(ApplicationStatus status);
+    /** ATOMIC: record an approval or rejection (with its audit line); fails if it was already decided. */
+    void decideApplication(int applicationId, ApplicationStatus decision, String rejectionReason, StaffMember by);
+
 }

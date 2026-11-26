@@ -82,6 +82,31 @@ public class AppealsDisputesTab implements FeatureTab {
         loadApplicationsFromDatabase();
         initUI();
         loadSavedAppeals();
+// each time this tab is opened, pick up applications decided since the app started
+        rootPanel.addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && rootPanel.isShowing())
+                refreshApplications();
+        });
+    }
+
+    /** Adds applications decided since the app started (for example, ones just rejected on the approval screen). */
+    private void refreshApplications() {
+        if (cmbApplications == null || databaseError != null) return;
+        try {
+            for (Application a : repo.findApplications()) {
+                String id = String.format("APP-%03d", a.getId());
+                if (applications.containsKey(id)) continue;
+                ApplicationRecord r = new ApplicationRecord(id, String.format("CIT-%04d", a.getApplicantId()),
+                        a.getProgrammeName(), a.getStatus(), a.getDecisionDate());
+                r.setDbId(a.getId());
+                r.setApplicantName(a.getApplicantName());
+                r.setLocked(a.isLocked());
+                r.setArchivedUntil(a.getArchivedUntil());
+                r.setEnrollmentTaskCreated(a.isEnrollmentTaskCreated());
+                applications.put(id, r);
+                cmbApplications.addItem(id);
+            }
+        } catch (RuntimeException ex) { /* keep the list we already have */ }
     }
 
     @Override
