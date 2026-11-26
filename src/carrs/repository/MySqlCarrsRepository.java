@@ -410,4 +410,217 @@ public class MySqlCarrsRepository implements CarrsRepository {
     private static void setInteger(PreparedStatement ps, int i, Integer v) throws SQLException {
         if (v == null) ps.setNull(i, Types.INTEGER); else ps.setInt(i, v);
     }
+
+    //Program and Approval
+    @Override
+    public boolean applicationExists(String idType, String idNumber, int programmeId) {
+        String sql = "SELECT 1 FROM programme_application a JOIN applicant p ON a.applicant_id = p.applicant_id " +
+                "WHERE p.id_type=? AND p.id_number=? AND a.programme_id=? AND a.status IN ('COMPLETED', 'APPROVED') LIMIT 1";
+        try (Connection c = Database.connect(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, idType);
+            ps.setString(2, idNumber);
+            ps.setInt(3, programmeId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("applicationExists failed", e);
+        }
+    }
+
+    @Override
+    public void createApplicantAndApplication(Applicant a, ProgrammeApplication app, StaffMember by) {
+        String applicantSql = "INSERT INTO applicant (name, id_type, id_number, date_of_birth, contact_number, address, employment_status, monthly_income, dependents, household_size) VALUES (?,?,?,?,?,?,?,?,?,?)";
+        String appSql = "INSERT INTO programme_application (reference_no, applicant_id, programme_id, assistance_requested, reason_for_applying, status, created_by, supporting_doc_path) VALUES (?,?,?,?,?,'COMPLETED',?,?)";
+
+        try (Connection c = Database.connect()) {
+            c.setAutoCommit(false); // Start Transaction
+            try {
+                // 1. Insert Applicant
+                int applicantId;
+                try (PreparedStatement ps = c.prepareStatement(applicantSql, Statement.RETURN_GENERATED_KEYS)) {
+                    ps.setString(1, a.getName());
+                    ps.setString(2, a.getDetails().get("id_type"));
+                    ps.setString(3, a.getDetails().get("id_number"));
+                    ps.setString(4, a.getDetails().get("date_of_birth"));
+                    ps.setString(5, a.getDetails().get("contact_number"));
+                    ps.setString(6, a.getDetails().get("address"));
+                    ps.setString(7, a.getDetails().get("employment_status"));
+                    ps.setString(8, a.getDetails().get("monthly_income"));
+                    ps.setString(9, a.getDetails().get("dependents"));
+                    ps.setString(10, a.getDetails().get("household_size"));
+                    ps.executeUpdate();
+
+                    try (ResultSet rs = ps.getGeneratedKeys()) {
+                        rs.next();
+                        applicantId = rs.getInt(1);
+                    }
+                }
+
+                // 2. Insert Application
+                try (PreparedStatement ps = c.prepareStatement(appSql, Statement.RETURN_GENERATED_KEYS)) {
+                    ps.setString(1, app.getReferenceNo());
+                    ps.setInt(2, applicantId);
+                    ps.setInt(3, app.getProgrammeId());
+                    ps.setString(4, app.getAssistanceRequested());
+                    ps.setString(5, app.getReasonForApplying());
+                    ps.setInt(6, by.getId());
+                    ps.setString(7, app.getSupportingDocPath());
+                    ps.executeUpdate();
+
+                    try (ResultSet rs = ps.getGeneratedKeys()) {
+                        rs.next();
+                        app.setId(rs.getInt(1));
+                    }
+                }
+
+                // 3. Audit Trail
+                try (PreparedStatement ps = c.prepareStatement("INSERT INTO programme_application_audit (application_id, programme_id, action, details, performed_by) VALUES (?,?,?,?,?)")) {
+                    ps.setInt(1, app.getId());
+                    ps.setInt(2, app.getProgrammeId());
+                    ps.setString(3, "APPLICATION_CREATED");
+                    ps.setString(4, "Registered by " + by.getName());
+                    ps.setInt(5, by.getId());
+                    ps.executeUpdate();
+                }
+
+                c.commit();
+            } catch (SQLException ex) {
+                c.rollback();
+                throw ex;
+            } finally {
+                c.setAutoCommit(true);
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("createApplicantAndApplication failed", e);
+        }
+    }
+
+    @Override
+    public List<ProgrammeApplication> findApplicationsByStatus(ApplicationStatus status) {
+        String sql = "SELECT * FROM programme_application WHERE status=? ORDER BY application_id DESC";
+        List<ProgrammeApplication> out = new ArrayList<>();
+
+        try (Connection c = Database.connect(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, status.name());
+
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    ProgrammeApplication app = new ProgrammeApplication(
+                            rs.getInt("application_id"),
+                            rs.getString("reference_no"),
+                            rs.getInt("applicant_id"),
+                            rs.getInt("programme_id"),
+                            rs.getString("assistance_requested"),
+                            rs.getString("reason_for_applying"),
+                            ApplicationStatus.valueOf(rs.getString("status")),
+                            rs.getString("rejection_reason"),
+                            (Integer) rs.getObject("decided_by"),
+                            null, // Decided At (we don't need it for pending applications)
+                            rs.getInt("created_by"),
+                            LocalDateTime.now(),
+                            rs.getString("supporting_doc_path")
+                    );
+                    out.add(app);
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("findApplicationsByStatus failed: " + e.getMessage());
+        }
+        return out;
+    }
+
+    @Override
+    public void decideApplication(int id, ApplicationStatus decision, String reason, StaffMember by) {
+        String sql = "UPDATE programme_application SET status=?, rejection_reason=?, decided_by=?, decided_at=NOW() WHERE application_id=? AND status='COMPLETED'";
+
+        try (Connection c = Database.connect(); PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, decision.name());
+            ps.setString(2, reason);
+            ps.setInt(3, by.getId());
+            ps.setInt(4, id);
+
+            if (ps.executeUpdate() == 0) {
+                throw new RuntimeException("Application already processed or does not exist.");
+            }
+
+            try (PreparedStatement audit = c.prepareStatement("INSERT INTO programme_application_audit (application_id, action, details, performed_by) VALUES (?,?,?,?)")) {
+                audit.setInt(1, id);
+                audit.setString(2, decision.name());
+                audit.setString(3, decision == ApplicationStatus.APPROVED ? "Approved" : "Rejected: " + reason);
+                audit.setInt(4, by.getId());
+                audit.executeUpdate();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("decideApplication failed", e);
+        }
+    }
+
+    @Override
+    public void createProgramme(String name, ProgrammeStatus status, int capacity, boolean providesBenefits, List<String> criteria, StaffMember by) {
+        String sql = "INSERT INTO programme (name, status, capacity, required_fields, provides_benefits) VALUES (?,?,?,?,?)";
+
+        try (Connection c = Database.connect(); PreparedStatement ps = c.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, name);
+            ps.setString(2, status.name());
+            ps.setInt(3, capacity);
+            ps.setString(4, String.join("|", criteria));
+            ps.setBoolean(5, providesBenefits);
+            ps.executeUpdate();
+
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                if (rs.next()) {
+                    try (PreparedStatement audit = c.prepareStatement("INSERT INTO application_audit (programme_id, action, details, performed_by) VALUES (?,?,?,?)")) {
+                        audit.setInt(1, rs.getInt(1));
+                        audit.setString(2, "PROGRAMME_CREATED");
+                        audit.setString(3, "Created programme " + name);
+                        audit.setInt(4, by.getId());
+                        audit.executeUpdate();
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("createProgramme failed", e);
+        }
+    }
+
+    @Override
+    public void deactivateProgramme(int programmeId, StaffMember by) {
+        try (Connection c = Database.connect(); PreparedStatement ps = c.prepareStatement("UPDATE programme SET status='COMPLETED' WHERE programme_id=?")) {
+            ps.setInt(1, programmeId);
+            ps.executeUpdate();
+
+            try (PreparedStatement audit = c.prepareStatement("INSERT INTO application_audit (programme_id, action, details, performed_by) VALUES (?,?,?,?)")) {
+                audit.setInt(1, programmeId);
+                audit.setString(2, "PROGRAMME_DEACTIVATED");
+                audit.setString(3, "Deactivated");
+                audit.setInt(4, by.getId());
+                audit.executeUpdate();
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("deactivateProgramme failed", e);
+        }
+    }
+
+    @Override
+    public List<Programme> findAllProgrammes() {
+        String sql = "SELECT programme_id, name, status, capacity, required_fields, provides_benefits FROM programme ORDER BY programme_id";
+        List<Programme> out = new ArrayList<>();
+        try (Connection c = Database.connect(); Statement st = c.createStatement(); ResultSet rs = st.executeQuery(sql)) {
+            while (rs.next()) {
+                ProgrammeStatus stEnum = ProgrammeStatus.valueOf(rs.getString("status"));
+                Programme p = new Programme(rs.getInt("programme_id"), rs.getString("name"), stEnum, rs.getInt("capacity"));
+                p.paysBenefits(rs.getBoolean("provides_benefits"));
+                String rf = rs.getString("required_fields");
+                if (rf != null && !rf.isBlank())
+                    for (String s : rf.split("\\|")) if (!s.isBlank()) p.requires(s.trim());
+                out.add(p);
+            }
+            return out;
+        } catch (SQLException e) {
+            e.printStackTrace();
+            throw new RuntimeException(e.getMessage());
+        }
+
+    }
 }
