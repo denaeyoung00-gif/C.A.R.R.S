@@ -1,2 +1,0 @@
--- The payment tables now live in schema.sql and their data in demo_data.sql.
--- You no longer need to run this file.
