@@ -34,4 +34,13 @@ public class StaffMember {
     public boolean canVerifyPayments() {
         return role == Role.OFFICE_MANAGER || role == Role.MEMBER_OF_PARLIAMENT;
     }
+
+    /** Office Staff, Manager, MP may approve/reject applications. Attendants may not. */
+    public boolean canApproveApplications() {
+        return role == Role.OFFICE_STAFF || role == Role.OFFICE_MANAGER || role == Role.MEMBER_OF_PARLIAMENT;
+    }
+
+    /** Only Manager and MP may manage programmes. */
+    public boolean canManageProgrammes() {
+        return role == Role.OFFICE_MANAGER || role == Role.MEMBER_OF_PARLIAMENT;
 }
