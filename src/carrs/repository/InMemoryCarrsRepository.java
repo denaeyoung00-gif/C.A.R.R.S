@@ -105,27 +105,6 @@ public class InMemoryCarrsRepository implements CarrsRepository {
         return out;
     }
 
-<<<<<<< HEAD
-    @Override
-    public List<Application> findApplications() {
-        return List.of();
-    }
-
-    @Override
-    public void saveAppeal(AppealRecord a) {
-
-    }
-
-    @Override
-    public void saveAppealDecision(AppealRecord a, Application app) {
-
-    }
-
-    @Override
-    public List<AppealRecord> findAppeals() {
-        return List.of();
-    }
-=======
     // ---- Appeals & Disputes (in memory, for tests)
     private final Map<Integer, Application> applications = new LinkedHashMap<>();
     private final Map<String, AppealRecord> appeals = new LinkedHashMap<>();
@@ -141,5 +120,4 @@ public class InMemoryCarrsRepository implements CarrsRepository {
         applications.put(app.getId(), app);
     }
     @Override public List<AppealRecord> findAppeals() { return new ArrayList<>(appeals.values()); }
->>>>>>> 942262f303535ddd0cbba18e1efc755dec41a203
 }
