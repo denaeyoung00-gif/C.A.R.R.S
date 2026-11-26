@@ -18,7 +18,7 @@ public class ApprovalTab implements FeatureTab {
     private final JButton approveBtn = new JButton("Approve");
     private final JButton rejectBtn = new JButton("Reject");
     private StaffMember user;
-    private List<Application> pending;
+    private List<ProgrammeApplication> pending;
 
     public ApprovalTab(CarrsRepository repo) {
         this.repo = repo;
@@ -45,7 +45,7 @@ public class ApprovalTab implements FeatureTab {
         if (!can) return;
 
         pending = repo.findApplicationsByStatus(ApplicationStatus.COMPLETED);
-        for (Application a : pending) {
+        for (ProgrammeApplication a : pending) {
             model.addRow(new Object[]{a.getId(), a.getReferenceNo(), a.getProgrammeId(), a.getApplicantId(), a.getReasonForApplying()});
         }
     }
@@ -53,7 +53,7 @@ public class ApprovalTab implements FeatureTab {
     private void decide(ApplicationStatus status) {
         int row = table.getSelectedRow();
         if (row < 0) { JOptionPane.showMessageDialog(view, "Select an application first."); return; }
-        
+
         String reason = null;
         if (status == ApplicationStatus.REJECTED) {
             reason = JOptionPane.showInputDialog(view, "Why is this application being rejected?");
