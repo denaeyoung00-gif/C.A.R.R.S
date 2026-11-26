@@ -120,4 +120,15 @@ public class InMemoryCarrsRepository implements CarrsRepository {
         applications.put(app.getId(), app);
     }
     @Override public List<AppealRecord> findAppeals() { return new ArrayList<>(appeals.values()); }
+
+    // ----- Applications & Approvals -----
+    @Override public void createApplicantAndApplication(Applicant applicant, ProgrammeApplication application, StaffMember by) {}
+    @Override public boolean applicationExists(String idType, String idNumber, int programmeId) { return false; }
+    @Override public List<ProgrammeApplication> findApplicationsByStatus(ApplicationStatus status) { return new ArrayList<>(); }
+    @Override public void decideApplication(int applicationId, ApplicationStatus decision, String rejectionReason, StaffMember by) {}
+
+    // ----- Program Management -----
+    @Override public void createProgramme(String name, ProgrammeStatus status, int capacity, boolean providesBenefits, List<String> criteria, StaffMember by) {}
+    @Override public void deactivateProgramme(int programmeId, StaffMember by) {}
+    @Override public List<Programme> findAllProgrammes() { return new ArrayList<>(programmes.values()); }
 }
