@@ -2,7 +2,7 @@ package carrs.model;
 
 import java.time.LocalDateTime;
 
-public class Application {
+public class ProgrammeApplication {
     private int id;
     private final String referenceNo;
     private final int applicantId;
@@ -17,11 +17,11 @@ public class Application {
     private final LocalDateTime createdAt;
     private final String supportingDocPath;
 
-    public Application(int id, String referenceNo, int applicantId, int programmeId, 
-                       String assistanceRequested, String reasonForApplying, 
-                       ApplicationStatus status, String rejectionReason, Integer decidedBy, 
-                       LocalDateTime decidedAt, int createdBy, LocalDateTime createdAt, 
-                       String supportingDocPath) {
+    public ProgrammeApplication(int id, String referenceNo, int applicantId, int programmeId,
+                                String assistanceRequested, String reasonForApplying,
+                                ApplicationStatus status, String rejectionReason, Integer decidedBy,
+                                LocalDateTime decidedAt, int createdBy, LocalDateTime createdAt,
+                                String supportingDocPath) {
         this.id = id; this.referenceNo = referenceNo; this.applicantId = applicantId;
         this.programmeId = programmeId; this.assistanceRequested = assistanceRequested;
         this.reasonForApplying = reasonForApplying; this.status = status;
