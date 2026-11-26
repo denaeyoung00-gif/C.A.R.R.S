@@ -55,4 +55,12 @@ public interface CarrsRepository {
     List<EnrolmentRow> findEnrolmentRows();
     /** Change an enrolment's status and the applicant's phone and address. */
     void updateEnrolmentRecord(int enrolmentId, EnrolmentStatus status, String phone, String address);
+
+    // ---- Programme Management
+    /** Every programme with its dates and enrolled count. Also brings each dated programme's status up to date. */
+    List<ProgrammeDetails> findProgrammeDetails();
+    void addProgramme(String name, LocalDate startDate, LocalDate finishDate, int capacity);
+    void editProgramme(int programmeId, String name, LocalDate startDate, LocalDate finishDate, int capacity);
+    /** Fails with a clear message if the programme already has enrolments, applications or payments. */
+    void removeProgramme(int programmeId);
 }

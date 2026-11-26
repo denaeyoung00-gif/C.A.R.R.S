@@ -600,4 +600,91 @@ public class MySqlCarrsRepository implements CarrsRepository {
             } catch (SQLException | RuntimeException e) { c.rollback(); throw e; }
         } catch (SQLException e) { throw new RuntimeException(e); }
     }
+
+    // ============ Programme Management ============
+    /** The programme table originally had no dates. Add the two columns the first time they are needed. */
+    private void ensureProgrammeDates(Connection c) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM information_schema.columns "
+                + "WHERE table_schema = DATABASE() AND table_name = 'programme' AND column_name = 'start_date'");
+             ResultSet rs = ps.executeQuery()) {
+            rs.next();
+            if (rs.getInt(1) == 0) {
+                try (Statement st = c.createStatement()) {
+                    st.executeUpdate("ALTER TABLE programme ADD COLUMN start_date DATE NULL, ADD COLUMN finish_date DATE NULL");
+                }
+            }
+        }
+    }
+
+    @Override public List<ProgrammeDetails> findProgrammeDetails() {
+        List<ProgrammeDetails> out = new ArrayList<>();
+        try (Connection c = Database.connect()) {
+            ensureProgrammeDates(c);
+            // keep the stored status in step with the dates, so Register Applicant and Payments agree with this screen
+            try (Statement st = c.createStatement()) {
+                st.executeUpdate("UPDATE programme SET status = CASE WHEN CURDATE() < start_date THEN 'UPCOMING' "
+                        + "WHEN CURDATE() > finish_date THEN 'COMPLETED' ELSE 'ACTIVE' END "
+                        + "WHERE start_date IS NOT NULL AND finish_date IS NOT NULL");
+            }
+            String sql = "SELECT p.programme_id, p.name, p.start_date, p.finish_date, p.capacity, p.status, "
+                    + "(SELECT COUNT(*) FROM enrolment e WHERE e.programme_id = p.programme_id "
+                    + "AND e.status IN ('ACTIVE','ON_HOLD')) AS enrolled FROM programme p ORDER BY p.name";
+            try (Statement st = c.createStatement(); ResultSet rs = st.executeQuery(sql)) {
+                while (rs.next()) {
+                    java.sql.Date sd = rs.getDate("start_date"), fd = rs.getDate("finish_date");
+                    out.add(new ProgrammeDetails(rs.getInt("programme_id"), rs.getString("name"),
+                            sd == null ? null : sd.toLocalDate(), fd == null ? null : fd.toLocalDate(),
+                            rs.getInt("capacity"), rs.getInt("enrolled"),
+                            ProgrammeStatus.valueOf(rs.getString("status"))));
+                }
+            }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
+    }
+
+    @Override public void addProgramme(String name, LocalDate start, LocalDate finish, int capacity) {
+        try (Connection c = Database.connect()) {
+            ensureProgrammeDates(c);
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO programme (name, status, capacity, required_fields, "
+                    + "provides_benefits, start_date, finish_date) VALUES (?,?,?,'',TRUE,?,?)")) {
+                ps.setString(1, name);
+                ps.setString(2, ProgrammeDetails.statusFor(start, finish, LocalDate.now()).name());
+                ps.setInt(3, capacity);
+                ps.setDate(4, java.sql.Date.valueOf(start));
+                ps.setDate(5, java.sql.Date.valueOf(finish));
+                ps.executeUpdate();
+            }
+        } catch (SQLIntegrityConstraintViolationException e) {
+            throw new IllegalStateException("A programme called \"" + name + "\" already exists.");
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    @Override public void editProgramme(int id, String name, LocalDate start, LocalDate finish, int capacity) {
+        try (Connection c = Database.connect()) {
+            ensureProgrammeDates(c);
+            try (PreparedStatement ps = c.prepareStatement("UPDATE programme SET name = ?, status = ?, capacity = ?, "
+                    + "start_date = ?, finish_date = ? WHERE programme_id = ?")) {
+                ps.setString(1, name);
+                ps.setString(2, ProgrammeDetails.statusFor(start, finish, LocalDate.now()).name());
+                ps.setInt(3, capacity);
+                ps.setDate(4, java.sql.Date.valueOf(start));
+                ps.setDate(5, java.sql.Date.valueOf(finish));
+                ps.setInt(6, id);
+                if (ps.executeUpdate() == 0) throw new IllegalStateException("That programme no longer exists.");
+            }
+        } catch (SQLIntegrityConstraintViolationException e) {
+            throw new IllegalStateException("A programme called \"" + name + "\" already exists.");
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    @Override public void removeProgramme(int id) {
+        try (Connection c = Database.connect();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM programme WHERE programme_id = ?")) {
+            ps.setInt(1, id);
+            if (ps.executeUpdate() == 0) throw new IllegalStateException("That programme no longer exists.");
+        } catch (SQLIntegrityConstraintViolationException e) {
+            throw new IllegalStateException("This programme already has enrolments, applications or payments, so it "
+                    + "cannot be deleted. Change its finish date to close it instead.");
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
 }

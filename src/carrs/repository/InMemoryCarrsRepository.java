@@ -184,4 +184,36 @@ public class InMemoryCarrsRepository implements CarrsRepository {
         if (a != null) { a.with("contact_number", phone); a.with("address", address); }
     }
 
+    // ---- Programme Management (in memory)
+    private final Map<Integer, LocalDate[]> programmeDates = new HashMap<>();
+
+    @Override public List<ProgrammeDetails> findProgrammeDetails() {
+        List<ProgrammeDetails> out = new ArrayList<>();
+        for (Programme p : programmes.values()) {
+            LocalDate[] d = programmeDates.get(p.getId());
+            out.add(new ProgrammeDetails(p.getId(), p.getName(), d == null ? null : d[0], d == null ? null : d[1],
+                    p.getCapacity(), countLiveEnrolments(p.getId()), p.getStatus()));
+        }
+        return out;
+    }
+    private static ProgrammeStatus statusOf(LocalDate s, LocalDate f) { return ProgrammeDetails.statusFor(s, f, LocalDate.now()); }
+    @Override public void addProgramme(String name, LocalDate start, LocalDate finish, int capacity) {
+        for (Programme p : programmes.values())
+            if (p.getName().equalsIgnoreCase(name)) throw new IllegalStateException("A programme called \"" + name + "\" already exists.");
+        int id = programmes.keySet().stream().max(Integer::compare).orElse(0) + 1;
+        programmes.put(id, new Programme(id, name, statusOf(start, finish), capacity));
+        programmeDates.put(id, new LocalDate[]{start, finish});
+    }
+    @Override public void editProgramme(int id, String name, LocalDate start, LocalDate finish, int capacity) {
+        if (!programmes.containsKey(id)) throw new IllegalStateException("That programme no longer exists.");
+        for (Programme p : programmes.values())
+            if (p.getId() != id && p.getName().equalsIgnoreCase(name)) throw new IllegalStateException("A programme called \"" + name + "\" already exists.");
+        programmes.put(id, new Programme(id, name, statusOf(start, finish), capacity));
+        programmeDates.put(id, new LocalDate[]{start, finish});
+    }
+    @Override public void removeProgramme(int id) {
+        if (countLiveEnrolments(id) > 0)
+            throw new IllegalStateException("This programme already has enrolments, so it cannot be deleted.");
+        programmes.remove(id); programmeDates.remove(id);
+    }
 }

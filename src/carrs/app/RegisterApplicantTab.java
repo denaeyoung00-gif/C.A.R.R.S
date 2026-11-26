@@ -99,6 +99,12 @@ public class RegisterApplicantTab implements FeatureTab {
         split.setResizeWeight(0.65);
         split.setContinuousLayout(true);
         root.add(split, BorderLayout.CENTER);
+
+        // every time this tab is opened, reload the programme list so newly created programmes appear
+        root.addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0 && root.isShowing())
+                reloadProgrammes();
+        });
     }
 
     @Override public String getTitle() { return "Register Applicant"; }
@@ -108,8 +114,20 @@ public class RegisterApplicantTab implements FeatureTab {
     public void onUserChanged(StaffMember u) {
         this.user = u;
         approval.onUserChanged(u);
+        reloadProgrammes();
+    }
+
+    /** Re-reads the programme list from the database, keeping the chosen programme selected if it is still there. */
+    private void reloadProgrammes() {
+        Programme current = (Programme) programmeBox.getSelectedItem();
+        int keepId = current == null ? -1 : current.getId();
         programmeBox.removeAllItems();
-        for (Programme p : repo.findAllProgrammes()) programmeBox.addItem(p);
+        Programme toSelect = null;
+        for (Programme p : repo.findAllProgrammes()) {
+            programmeBox.addItem(p);
+            if (p.getId() == keepId) toSelect = p;
+        }
+        if (toSelect != null) programmeBox.setSelectedItem(toSelect);
     }
 
     private void onSave() {
