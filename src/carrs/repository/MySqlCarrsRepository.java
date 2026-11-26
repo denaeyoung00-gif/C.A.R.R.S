@@ -82,8 +82,8 @@ public class MySqlCarrsRepository implements CarrsRepository {
     // ============ Payment & Benefit Management ============
     private static final String INSERT_PAYMENT =
             "INSERT INTO payment (applicant_id, programme_id, benefit_type, payment_method, amount, scheduled_date, "
-          + "distributed_date, status, failure_reason, payee_name, verified, verified_by, verified_at, "
-          + "recorded_by, recorded_at, cheque_scan_path) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+                    + "distributed_date, status, failure_reason, payee_name, verified, verified_by, verified_at, "
+                    + "recorded_by, recorded_at, cheque_scan_path) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
     /** One transaction: the new payment and its audit line are saved together, or neither is. */
     @Override public void savePayment(Payment p, PaymentAudit audit) {
@@ -123,8 +123,8 @@ public class MySqlCarrsRepository implements CarrsRepository {
             try {
                 try (PreparedStatement ps = c.prepareStatement(
                         "UPDATE payment SET benefit_type=?, payment_method=?, amount=?, scheduled_date=?, "
-                      + "distributed_date=?, status=?, failure_reason=?, payee_name=?, verified=?, verified_by=?, "
-                      + "verified_at=?, cheque_scan_path=? WHERE payment_id=?")) {
+                                + "distributed_date=?, status=?, failure_reason=?, payee_name=?, verified=?, verified_by=?, "
+                                + "verified_at=?, cheque_scan_path=? WHERE payment_id=?")) {
                     ps.setString(1, p.getBenefitType().name());
                     ps.setString(2, p.getPaymentMethod().name());
                     ps.setBigDecimal(3, p.getAmount());
@@ -143,7 +143,7 @@ public class MySqlCarrsRepository implements CarrsRepository {
                 for (PaymentChange ch : changes) {
                     try (PreparedStatement ps = c.prepareStatement(
                             "INSERT INTO payment_change (payment_id, field_name, old_value, new_value, reason, "
-                          + "changed_by, changed_at) VALUES (?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                                    + "changed_by, changed_at) VALUES (?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
                         ps.setInt(1, ch.getPaymentId());
                         ps.setString(2, ch.getFieldName());
                         ps.setString(3, ch.getOldValue());
@@ -185,7 +185,7 @@ public class MySqlCarrsRepository implements CarrsRepository {
 
     @Override public List<PaymentAudit> findAuditForApplicant(int applicantId) {
         String sql = "SELECT a.* FROM payment_audit a JOIN payment p ON p.payment_id = a.payment_id "
-                   + "WHERE p.applicant_id = ? ORDER BY a.audit_id";
+                + "WHERE p.applicant_id = ? ORDER BY a.audit_id";
         List<PaymentAudit> out = new ArrayList<>();
         try (Connection c = Database.connect(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setInt(1, applicantId);
@@ -221,7 +221,7 @@ public class MySqlCarrsRepository implements CarrsRepository {
 
     @Override public Payment findLivePayment(int applicantId, int programmeId, BenefitType type, LocalDate date) {
         String sql = "SELECT * FROM payment WHERE applicant_id=? AND programme_id=? AND benefit_type=? "
-                   + "AND scheduled_date=? AND status <> 'FAILED' LIMIT 1";
+                + "AND scheduled_date=? AND status <> 'FAILED' LIMIT 1";
         try (Connection c = Database.connect(); PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setInt(1, applicantId);
             ps.setInt(2, programmeId);
@@ -258,11 +258,112 @@ public class MySqlCarrsRepository implements CarrsRepository {
         return out;
     }
 
+    // ============ Appeals & Disputes ============
+    @Override public List<Application> findApplications() {
+        String sql = "SELECT a.*, ap.name AS applicant_name, pr.name AS programme_name FROM application a "
+                + "JOIN applicant ap ON ap.applicant_id = a.applicant_id "
+                + "JOIN programme pr ON pr.programme_id = a.programme_id ORDER BY a.application_id";
+        List<Application> out = new ArrayList<>();
+        try (Connection c = Database.connect(); Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery(sql)) {
+            while (rs.next()) {
+                Timestamp dd = rs.getTimestamp("decision_date"), au = rs.getTimestamp("archived_until");
+                out.add(new Application(rs.getInt("application_id"), rs.getInt("applicant_id"),
+                        rs.getString("applicant_name"), rs.getInt("programme_id"), rs.getString("programme_name"),
+                        rs.getString("status"), dd == null ? null : dd.toLocalDateTime(), rs.getBoolean("locked"),
+                        au == null ? null : au.toLocalDateTime(), rs.getBoolean("enrollment_task_created")));
+            }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
+    }
+
+    @Override public void saveAppeal(AppealRecord a) {
+        try (Connection c = Database.connect()) {
+            c.setAutoCommit(false);
+            try {
+                try (PreparedStatement ps = c.prepareStatement("INSERT INTO appeal (cadn, application_id, "
+                        + "constituency_code, grounds, justification, status, lodged_by, lodged_at) "
+                        + "VALUES (?,?,?,?,?,?,?,?)")) {
+                    ps.setString(1, a.getCadn()); ps.setInt(2, a.getApplicationId());
+                    ps.setString(3, a.getConstituencyCode()); ps.setString(4, a.getGrounds());
+                    ps.setString(5, a.getJustification()); ps.setString(6, a.getStatus());
+                    ps.setString(7, a.getLodgedBy()); setDateTime(ps, 8, a.getLodgedAt());
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement("INSERT INTO appeal_document "
+                        + "(cadn, file_name, extension, size_bytes) VALUES (?,?,?,?)")) {
+                    for (AppealRecord.Doc d : a.getDocuments()) {
+                        ps.setString(1, a.getCadn()); ps.setString(2, d.fileName);
+                        ps.setString(3, d.extension); ps.setLong(4, d.sizeBytes);
+                        ps.executeUpdate();
+                    }
+                }
+                try (PreparedStatement ps = c.prepareStatement(
+                        "UPDATE application SET locked = TRUE WHERE application_id = ?")) {
+                    ps.setInt(1, a.getApplicationId());
+                    ps.executeUpdate();
+                }
+                c.commit();
+            } catch (SQLException | RuntimeException e) { c.rollback(); throw e; }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    @Override public void saveAppealDecision(AppealRecord a, Application app) {
+        try (Connection c = Database.connect()) {
+            c.setAutoCommit(false);
+            try {
+                try (PreparedStatement ps = c.prepareStatement("UPDATE appeal SET status = ?, decided_by = ?, "
+                        + "decision_note = ?, decided_at = ? WHERE cadn = ?")) {
+                    ps.setString(1, a.getStatus()); ps.setString(2, a.getDecidedBy());
+                    ps.setString(3, a.getDecisionNote()); setDateTime(ps, 4, a.getDecidedAt());
+                    ps.setString(5, a.getCadn());
+                    ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement("UPDATE application SET status = ?, "
+                        + "decision_date = ?, locked = ?, archived_until = ?, enrollment_task_created = ? "
+                        + "WHERE application_id = ?")) {
+                    ps.setString(1, app.getStatus()); setDateTime(ps, 2, app.getDecisionDate());
+                    ps.setBoolean(3, app.isLocked()); setDateTime(ps, 4, app.getArchivedUntil());
+                    ps.setBoolean(5, app.isEnrollmentTaskCreated()); ps.setInt(6, app.getId());
+                    ps.executeUpdate();
+                }
+                c.commit();
+            } catch (SQLException | RuntimeException e) { c.rollback(); throw e; }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    @Override public List<AppealRecord> findAppeals() {
+        List<AppealRecord> out = new ArrayList<>();
+        Map<String, AppealRecord> byCadn = new HashMap<>();
+        try (Connection c = Database.connect(); Statement st = c.createStatement()) {
+            try (ResultSet rs = st.executeQuery("SELECT * FROM appeal ORDER BY lodged_at, cadn")) {
+                while (rs.next()) {
+                    Timestamp la = rs.getTimestamp("lodged_at"), da = rs.getTimestamp("decided_at");
+                    AppealRecord r = new AppealRecord(rs.getString("cadn"), rs.getInt("application_id"),
+                            rs.getString("constituency_code"), rs.getString("grounds"),
+                            rs.getString("justification"), rs.getString("status"), rs.getString("lodged_by"),
+                            la.toLocalDateTime(), rs.getString("decided_by"), rs.getString("decision_note"),
+                            da == null ? null : da.toLocalDateTime());
+                    out.add(r); byCadn.put(r.getCadn(), r);
+                }
+            }
+            try (ResultSet rs = st.executeQuery("SELECT * FROM appeal_document ORDER BY doc_id")) {
+                while (rs.next()) {
+                    AppealRecord r = byCadn.get(rs.getString("cadn"));
+                    if (r != null) r.getDocuments().add(new AppealRecord.Doc(
+                            rs.getString("file_name"), rs.getString("extension"), rs.getLong("size_bytes")));
+                }
+            }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
+    }
+
     // ============ helpers: turn rows into objects ============
     private Applicant toApplicant(ResultSet rs) throws SQLException {
         Applicant a = new Applicant(rs.getInt("applicant_id"), rs.getString("name"));
         a.with("household_size", rs.getString("household_size"));
         a.with("contact_number", rs.getString("contact_number"));
+        a.with("trn", rs.getString("trn"));
         return a;
     }
 

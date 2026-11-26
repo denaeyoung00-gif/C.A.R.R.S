@@ -1,5 +1,7 @@
 package carrs.app;
 
+import carrs.model.AppealRecord;
+import carrs.model.Application;
 import carrs.model.StaffMember;
 import carrs.repository.CarrsRepository;
 
@@ -37,7 +39,8 @@ public class AppealsDisputesTab implements FeatureTab {
     private final JPanel rootPanel = new JPanel(new BorderLayout());
 
     private final AppealService appealService = new AppealService();
-    private final Map<String, ApplicationRecord> mockDatabase = new LinkedHashMap<>();
+    private final Map<String, ApplicationRecord> applications = new LinkedHashMap<>();
+    private String databaseError;
 
     private JComboBox<String> cmbApplications;
     private JTextField txtCitizenId;
@@ -76,8 +79,9 @@ public class AppealsDisputesTab implements FeatureTab {
 
     public AppealsDisputesTab(CarrsRepository repo) {
         this.repo = repo;
-        seedApplicationData();
+        loadApplicationsFromDatabase();
         initUI();
+        loadSavedAppeals();
     }
 
     @Override
@@ -149,15 +153,75 @@ public class AppealsDisputesTab implements FeatureTab {
         }
     }
 
-    private void seedApplicationData() {
-        mockDatabase.put("APP-001", new ApplicationRecord("APP-001", "CIT-1001", "PROG-WELFARE", "Rejected",
-                LocalDateTime.now().minusDays(14)));
-        mockDatabase.put("APP-002", new ApplicationRecord("APP-002", "CIT-1002", "PROG-GRANT", "Rejected",
-                LocalDateTime.now().minusDays(35)));
-        mockDatabase.put("APP-003", new ApplicationRecord("APP-003", "CIT-1003", "PROG-GRANT", "Approved",
-                LocalDateTime.now().minusDays(5)));
-        mockDatabase.put("APP-004", new ApplicationRecord("APP-004", "CIT-1004", "PROG-DISASTER", "Disqualified",
-                LocalDateTime.now().minusDays(4)));
+    /** Reads every decided application (with the real applicant and programme names) from MySQL. */
+    private void loadApplicationsFromDatabase() {
+        applications.clear();
+        try {
+            for (Application a : repo.findApplications()) {
+                String id = String.format("APP-%03d", a.getId());
+                ApplicationRecord r = new ApplicationRecord(id, String.format("CIT-%04d", a.getApplicantId()),
+                        a.getProgrammeName(), a.getStatus(), a.getDecisionDate());
+                r.setDbId(a.getId());
+                r.setApplicantName(a.getApplicantName());
+                r.setLocked(a.isLocked());
+                r.setArchivedUntil(a.getArchivedUntil());
+                r.setEnrollmentTaskCreated(a.isEnrollmentTaskCreated());
+                applications.put(id, r);
+            }
+        } catch (RuntimeException ex) {
+            databaseError = ex.getMessage();
+        }
+    }
+
+    /** Re-creates the docket from the appeals already stored in MySQL. */
+    private void loadSavedAppeals() {
+        if (databaseError != null) return;
+        try {
+            DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+            for (AppealRecord rec : repo.findAppeals()) {
+                ApplicationRecord app = applications.get(String.format("APP-%03d", rec.getApplicationId()));
+                if (app == null) continue;
+                List<AppealGround> grounds = new ArrayList<>();
+                for (String g : rec.getGrounds().split(",")) {
+                    try { grounds.add(AppealGround.valueOf(g.trim())); } catch (IllegalArgumentException ignored) { }
+                }
+                List<SupportingDocument> docs = new ArrayList<>();
+                for (AppealRecord.Doc d : rec.getDocuments()) {
+                    docs.add(new SupportingDocument(d.fileName, d.extension, d.sizeBytes));
+                }
+                Appeal appeal = new Appeal(rec.getCadn(), app, rec.getConstituencyCode(), grounds,
+                        rec.getJustification(), docs, rec.getLodgedBy());
+                appeal.restoreState(rec.getStatus(), rec.getLodgedAt(), rec.getDecidedBy(), rec.getDecisionNote(),
+                        rec.getDecidedAt(), app.getArchivedUntil());
+                appealService.restore(appeal);
+                docketTableModel.addRow(new Object[] { appeal.getCadn(), appeal.getOriginalApplicationId(),
+                        appeal.getApplicantCitizenId(), appeal.getConstituencyCode(), appeal.getStatus(),
+                        appeal.getSubmissionTimestamp().format(dtf) });
+            }
+        } catch (RuntimeException ex) {
+            databaseError = ex.getMessage();
+        }
+    }
+
+    /** Converts a lodged Appeal into the row object the repository saves. */
+    private AppealRecord toRecord(Appeal a, ApplicationRecord app) {
+        StringBuilder g = new StringBuilder();
+        for (AppealGround ground : a.getGrounds()) {
+            if (g.length() > 0) g.append(",");
+            g.append(ground.name());
+        }
+        AppealRecord rec = new AppealRecord(a.getCadn(), app.getDbId(), a.getConstituencyCode(), g.toString(),
+                a.getJustification(), a.getStatus(), a.getLodgedBy(), a.getSubmissionTimestamp(),
+                a.getDecidedBy(), a.getDecisionNote(), a.getDecisionTimestamp());
+        for (SupportingDocument d : a.getSupportingDocs()) {
+            rec.getDocuments().add(new AppealRecord.Doc(d.getFileName(), d.getExtension(), d.getFileSizeBytes()));
+        }
+        return rec;
+    }
+
+    private Application toDbApplication(ApplicationRecord r) {
+        return new Application(r.getDbId(), 0, r.getApplicantName(), 0, r.getProgramId(), r.getStatus(),
+                r.getDecisionDate(), r.isLocked(), r.getArchivedUntil(), r.isEnrollmentTaskCreated());
     }
 
     private void initUI() {
@@ -241,8 +305,24 @@ public class AppealsDisputesTab implements FeatureTab {
         pnlRecord.add(new JLabel("Application ID:"), gbc);
         gbc.gridx = 1;
         gbc.weightx = 0.7;
-        cmbApplications = new JComboBox<>(mockDatabase.keySet().toArray(new String[0]));
+        cmbApplications = new JComboBox<>(applications.keySet().toArray(new String[0]));
         cmbApplications.setBackground(Color.WHITE);
+        cmbApplications.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                ApplicationRecord r = value == null ? null : applications.get((String) value);
+                String text = r == null ? ""
+                        : index == -1
+                        ? r.getApplicationId() + "  -  " + r.getApplicantName()
+                        : r.getApplicationId() + "  |  " + r.getApplicantName() + "  |  "
+                        + r.getProgramId() + "  |  " + r.getStatus()
+                        + (r.isLocked() ? " [LOCKED]" : "");
+                return super.getListCellRendererComponent(list, text, index, isSelected, cellHasFocus);
+            }
+        });
+        cmbApplications.setPreferredSize(new Dimension(300, 30));
+        cmbApplications.setMinimumSize(new Dimension(200, 30));
         cmbApplications.addActionListener(e -> populateApplicationDetails());
         pnlRecord.add(cmbApplications, gbc);
 
@@ -601,7 +681,7 @@ public class AppealsDisputesTab implements FeatureTab {
         Appeal appeal = appealService.findAppealByCadn(cadn);
         if (appeal == null)
             return;
-        ApplicationRecord app = mockDatabase.get(appeal.getOriginalApplicationId());
+        ApplicationRecord app = applications.get(appeal.getOriginalApplicationId());
         String note = txtDecisionNote.getText().trim();
         String reviewerId = txtAgentId.getText().trim();
         boolean isReviewer = chkReviewerRole.isSelected();
@@ -610,6 +690,7 @@ public class AppealsDisputesTab implements FeatureTab {
             if (approve) {
                 appealService.setSimulateEnrollmentSyncFailure(chkSimulateSyncError.isSelected());
                 appealService.approveAppeal(cadn, app, reviewerId, isReviewer, note);
+                repo.saveAppealDecision(toRecord(appeal, app), toDbApplication(app));
                 refreshDocketRowStatus(appeal);
                 populateApplicationDetails();
                 JOptionPane.showMessageDialog(rootPanel,
@@ -617,6 +698,7 @@ public class AppealsDisputesTab implements FeatureTab {
                         "Approved", JOptionPane.INFORMATION_MESSAGE);
             } else {
                 appealService.denyAppeal(cadn, app, reviewerId, isReviewer, note);
+                repo.saveAppealDecision(toRecord(appeal, app), toDbApplication(app));
                 refreshDocketRowStatus(appeal);
                 populateApplicationDetails();
                 JOptionPane.showMessageDialog(rootPanel,
@@ -638,7 +720,8 @@ public class AppealsDisputesTab implements FeatureTab {
                 BorderFactory.createMatteBorder(1, 0, 0, 0, ORANGE_BORDER),
                 new EmptyBorder(6, 16, 6, 16)));
 
-        String databaseStatus = repo != null ? "CONNECTED" : "DISCONNECTED";
+        String databaseStatus = databaseError == null ? "CONNECTED (" + applications.size() + " applications)"
+                : "DISCONNECTED";
         JLabel lblSystemStatus = new JLabel("C.A.R.R.S. Core Database: " + databaseStatus
                 + " | Constituency Gateway: ONLINE");
         lblSystemStatus.setFont(new Font("Monospaced", Font.PLAIN, 11));
@@ -688,9 +771,9 @@ public class AppealsDisputesTab implements FeatureTab {
         if (selectedId == null)
             return;
 
-        ApplicationRecord record = mockDatabase.get(selectedId);
+        ApplicationRecord record = applications.get(selectedId);
         if (record != null) {
-            txtCitizenId.setText(record.getApplicantCitizenId());
+            txtCitizenId.setText(record.getApplicantCitizenId() + "  (" + record.getApplicantName() + ")");
             txtProgram.setText(record.getProgramId());
             txtDecisionDate.setText(record.getDecisionDate() != null
                     ? record.getDecisionDate().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
@@ -729,7 +812,7 @@ public class AppealsDisputesTab implements FeatureTab {
 
     private void executeAppealSubmission() {
         String appId = (String) cmbApplications.getSelectedItem();
-        ApplicationRecord appRecord = mockDatabase.get(appId);
+        ApplicationRecord appRecord = applications.get(appId);
         String constituency = txtConstituency.getText().trim();
         boolean isResident = chkVerifiedResident.isSelected();
         String agentId = txtAgentId.getText().trim();
@@ -759,6 +842,8 @@ public class AppealsDisputesTab implements FeatureTab {
                     justification,
                     docs,
                     agentId);
+
+            repo.saveAppeal(toRecord(appeal, appRecord));
 
             DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
             docketTableModel.addRow(new Object[] {
@@ -862,9 +947,11 @@ class ApplicationRecord {
     private LocalDateTime archivedUntil;
     private boolean enrollmentTaskCreated;
     private boolean locked;
+    private int dbId;
+    private String applicantName = "";
 
     ApplicationRecord(String applicationId, String applicantCitizenId, String programId, String status,
-            LocalDateTime decisionDate) {
+                      LocalDateTime decisionDate) {
         this.applicationId = applicationId;
         this.applicantCitizenId = applicantCitizenId;
         this.programId = programId;
@@ -875,6 +962,22 @@ class ApplicationRecord {
 
     public String getApplicationId() {
         return applicationId;
+    }
+
+    public int getDbId() {
+        return dbId;
+    }
+
+    public void setDbId(int dbId) {
+        this.dbId = dbId;
+    }
+
+    public String getApplicantName() {
+        return applicantName;
+    }
+
+    public void setApplicantName(String applicantName) {
+        this.applicantName = applicantName;
     }
 
     public String getApplicantCitizenId() {
@@ -962,14 +1065,14 @@ class Appeal {
     private LocalDateTime archivedUntil;
     private boolean finalized = false;
     private final List<String> reviewAuditTrail = new ArrayList<>();
-    private final LocalDateTime submissionTimestamp = LocalDateTime.now();
+    private LocalDateTime submissionTimestamp = LocalDateTime.now();
     private final String justification;
     private final String lodgedBy;
     private final List<AppealGround> grounds;
     private final List<SupportingDocument> documents;
 
     Appeal(String cadn, ApplicationRecord record, String constituencyCode, List<AppealGround> grounds,
-            String justification, List<SupportingDocument> documents, String lodgedBy) {
+           String justification, List<SupportingDocument> documents, String lodgedBy) {
         this.cadn = cadn;
         this.originalApplicationId = record.getApplicationId();
         this.applicantCitizenId = record.getApplicantCitizenId();
@@ -982,6 +1085,34 @@ class Appeal {
 
     public String getCadn() {
         return cadn;
+    }
+
+    public String getLodgedBy() {
+        return lodgedBy;
+    }
+
+    public String getDecidedBy() {
+        return decidedBy;
+    }
+
+    public String getDecisionNote() {
+        return decisionNote;
+    }
+
+    public LocalDateTime getDecisionTimestamp() {
+        return decisionTimestamp;
+    }
+
+    /** Puts back the state of an appeal that was saved in the database. */
+    void restoreState(String status, LocalDateTime lodgedAt, String decidedBy, String decisionNote,
+                      LocalDateTime decidedAt, LocalDateTime archivedUntil) {
+        this.status = status;
+        this.submissionTimestamp = lodgedAt;
+        this.decidedBy = decidedBy;
+        this.decisionNote = decisionNote;
+        this.decisionTimestamp = decidedAt;
+        this.archivedUntil = archivedUntil;
+        this.finalized = !"APPEAL_PENDING_REVIEW".equals(status);
     }
 
     public String getOriginalApplicationId() {
@@ -1025,7 +1156,7 @@ class Appeal {
     }
 
     public void finalizeDecision(String outcomeStatus, String reviewerId, String decisionNote,
-            LocalDateTime archivedUntil) {
+                                 LocalDateTime archivedUntil) {
         if (this.finalized) {
             throw new IllegalStateException(
                     "Finalized Error: Appeal " + cadn + " has already been finalized and cannot be re-adjudicated.");
@@ -1071,8 +1202,8 @@ class AppealService {
     }
 
     public Appeal lodgeAppeal(ApplicationRecord record, String constituency, boolean isResident,
-            List<AppealGround> grounds, String justification,
-            List<SupportingDocument> docs, String agentId) {
+                              List<AppealGround> grounds, String justification,
+                              List<SupportingDocument> docs, String agentId) {
         if (record == null)
             throw new IllegalArgumentException("Select a valid application record.");
         if (record.isLocked())
@@ -1114,6 +1245,15 @@ class AppealService {
         return appeal;
     }
 
+    /** Adds an appeal that was loaded from the database and keeps new CADN numbers unique. */
+    void restore(Appeal appeal) {
+        byCadn.put(appeal.getCadn(), appeal);
+        try {
+            int n = Integer.parseInt(appeal.getCadn().substring(5));
+            if (n > seq.get()) seq.set(n);
+        } catch (NumberFormatException ignored) { }
+    }
+
     public Appeal openAppealForReview(String cadn, String reviewerId, boolean hasReviewerPermission) {
         if (!hasReviewerPermission) {
             throw new SecurityException("Access Denied: User '" + reviewerId + "' does not have reviewer permissions.");
@@ -1127,7 +1267,7 @@ class AppealService {
     }
 
     public Appeal approveAppeal(String cadn, ApplicationRecord app, String reviewerId, boolean hasReviewerPermission,
-            String note) {
+                                String note) {
         validateAdjudication(cadn, app, reviewerId, hasReviewerPermission, note);
         Appeal appeal = byCadn.get(cadn);
         app.setLocked(false);
@@ -1143,7 +1283,7 @@ class AppealService {
     }
 
     public Appeal denyAppeal(String cadn, ApplicationRecord app, String reviewerId, boolean hasReviewerPermission,
-            String note) {
+                             String note) {
         validateAdjudication(cadn, app, reviewerId, hasReviewerPermission, note);
         Appeal appeal = byCadn.get(cadn);
         LocalDateTime archiveUntil = LocalDateTime.now().plusDays(DENIAL_ARCHIVE_DAYS);
@@ -1154,7 +1294,7 @@ class AppealService {
     }
 
     private void validateAdjudication(String cadn, ApplicationRecord app, String reviewerId,
-            boolean hasReviewerPermission, String note) {
+                                      boolean hasReviewerPermission, String note) {
         if (!hasReviewerPermission) {
             throw new SecurityException("Access Denied: User '" + reviewerId + "' cannot adjudicate appeals.");
         }

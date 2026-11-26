@@ -11,6 +11,7 @@ public class Applicant {
     public int getId() { return id; }
     public String getName() { return name; }
     public Applicant with(String field, String value) { details.put(field, value); return this; }
+    public String getDetail(String field) { return details.get(field); }
     public boolean hasDetail(String field) {
         String v = details.get(field);
         return v != null && !v.trim().isEmpty();
