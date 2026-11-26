@@ -143,8 +143,45 @@ public class InMemoryCarrsRepository implements CarrsRepository {
         ProgrammeApplication p = programmeApplications.get(applicationId);
         if (p == null || p.getStatus() != ApplicationStatus.COMPLETED)
             throw new IllegalStateException("That application was not found or has already been decided.");
+        if (decision == ApplicationStatus.APPROVED) {
+            Programme prog = programmes.get(p.getProgrammeId());
+            if (prog != null && countLiveEnrolments(prog.getId()) >= prog.getCapacity())
+                throw new IllegalStateException("This programme is full, so the application cannot be approved.");
+        }
         p.setStatus(decision);
         p.setRejectionReason(decision == ApplicationStatus.REJECTED ? reason : null);
+        if (decision == ApplicationStatus.APPROVED) {
+            boolean already = false;
+            for (Enrolment e : enrolments.values())
+                if (e.getApplicantId() == p.getApplicantId() && e.getProgrammeId() == p.getProgrammeId() && e.isLive()) already = true;
+            if (!already) {
+                int id = enrolments.keySet().stream().max(Integer::compare).orElse(0) + 1;
+                enrolments.put(id, new Enrolment(id, p.getApplicantId(), p.getProgrammeId(), EnrolmentStatus.ACTIVE,
+                        java.time.LocalDateTime.now(), null));
+            }
+        }
+    }
+
+    @Override public List<EnrolmentRow> findEnrolmentRows() {
+        List<EnrolmentRow> out = new ArrayList<>();
+        for (Enrolment e : enrolments.values()) {
+            Applicant a = applicants.get(e.getApplicantId());
+            Programme pr = programmes.get(e.getProgrammeId());
+            out.add(new EnrolmentRow(e.getId(), e.getApplicantId(), e.getProgrammeId(),
+                    a == null ? "?" : a.getName(), a == null ? null : a.getDetail("trn"),
+                    pr == null ? "?" : pr.getName(), e.getStatus(), a == null ? null : a.getDetail("address"),
+                    a == null ? null : a.getDetail("contact_number"), e.getEnrolledAt().toLocalDate()));
+        }
+        java.util.Collections.reverse(out);
+        return out;
+    }
+
+    @Override public void updateEnrolmentRecord(int enrolmentId, EnrolmentStatus status, String phone, String address) {
+        Enrolment e = enrolments.get(enrolmentId);
+        if (e == null) throw new IllegalStateException("No enrolment found with ID " + enrolmentId);
+        e.setStatus(status);
+        Applicant a = applicants.get(e.getApplicantId());
+        if (a != null) { a.with("contact_number", phone); a.with("address", address); }
     }
 
 }

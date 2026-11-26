@@ -2,10 +2,8 @@ package carrs.app;
 
 import carrs.model.*;
 import carrs.repository.CarrsRepository;
+
 import java.awt.*;
-import java.io.File;
-import java.time.LocalDate;
-import java.time.format.DateTimeParseException;
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 

@@ -49,4 +49,10 @@ public interface CarrsRepository {
     /** ATOMIC: record an approval or rejection (with its audit line); fails if it was already decided. */
     void decideApplication(int applicationId, ApplicationStatus decision, String rejectionReason, StaffMember by);
 
+
+    // ---- Enrolment Management
+    /** Every enrolment with the applicant and programme details filled in, newest first. */
+    List<EnrolmentRow> findEnrolmentRows();
+    /** Change an enrolment's status and the applicant's phone and address. */
+    void updateEnrolmentRecord(int enrolmentId, EnrolmentStatus status, String phone, String address);
 }

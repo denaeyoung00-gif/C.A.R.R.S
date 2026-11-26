@@ -505,6 +505,17 @@ public class MySqlCarrsRepository implements CarrsRepository {
                         applicantId = rs.getInt(2);
                     }
                 }
+                if (decision == ApplicationStatus.APPROVED) {
+                    try (PreparedStatement ps = c.prepareStatement("SELECT p.capacity, (SELECT COUNT(*) FROM enrolment e "
+                            + "WHERE e.programme_id = p.programme_id AND e.status IN ('ACTIVE','ON_HOLD')) FROM programme p "
+                            + "WHERE p.programme_id = ? FOR UPDATE")) {
+                        ps.setInt(1, programmeId);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            if (rs.next() && rs.getInt(2) >= rs.getInt(1))
+                                throw new IllegalStateException("This programme is full, so the application cannot be approved.");
+                        }
+                    }
+                }
                 try (PreparedStatement ps = c.prepareStatement("UPDATE programme_application SET status = ?, "
                         + "rejection_reason = ?, decided_by = ?, decided_at = NOW() WHERE application_id = ?")) {
                     ps.setString(1, decision.name());
@@ -518,6 +529,16 @@ public class MySqlCarrsRepository implements CarrsRepository {
                     ps.setInt(1, applicantId); ps.setInt(2, programmeId);
                     ps.setString(3, decision == ApplicationStatus.REJECTED ? "Rejected" : "Approved");
                     ps.executeUpdate();
+                }
+                if (decision == ApplicationStatus.APPROVED) {
+                    // an approved application becomes a live enrolment (unless the person is already enrolled)
+                    try (PreparedStatement ps = c.prepareStatement("INSERT INTO enrolment (applicant_id, programme_id, status, enrolled_at) "
+                            + "SELECT ?, ?, 'ACTIVE', NOW() FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM enrolment "
+                            + "WHERE applicant_id = ? AND programme_id = ? AND status IN ('ACTIVE','ON_HOLD'))")) {
+                        ps.setInt(1, applicantId); ps.setInt(2, programmeId);
+                        ps.setInt(3, applicantId); ps.setInt(4, programmeId);
+                        ps.executeUpdate();
+                    }
                 }
                 applicationAudit(c, applicationId, programmeId, decision.name(),
                         decision == ApplicationStatus.REJECTED ? "Rejected: " + reason : "Approved", by.getId());
@@ -534,5 +555,49 @@ public class MySqlCarrsRepository implements CarrsRepository {
             ps.setString(4, details); ps.setInt(5, staffId);
             ps.executeUpdate();
         }
+    }
+
+    // ============ Enrolment Management ============
+    @Override public List<EnrolmentRow> findEnrolmentRows() {
+        String sql = "SELECT e.enrolment_id, e.applicant_id, e.programme_id, a.name, a.trn, p.name AS programme_name, "
+                + "e.status, a.address, a.contact_number, e.enrolled_at FROM enrolment e "
+                + "JOIN applicant a ON a.applicant_id = e.applicant_id "
+                + "JOIN programme p ON p.programme_id = e.programme_id ORDER BY e.enrolment_id DESC";
+        List<EnrolmentRow> out = new ArrayList<>();
+        try (Connection c = Database.connect(); Statement st = c.createStatement(); ResultSet rs = st.executeQuery(sql)) {
+            while (rs.next()) {
+                Timestamp at = rs.getTimestamp("enrolled_at");
+                out.add(new EnrolmentRow(rs.getInt("enrolment_id"), rs.getInt("applicant_id"), rs.getInt("programme_id"),
+                        rs.getString("name"), rs.getString("trn"), rs.getString("programme_name"),
+                        EnrolmentStatus.valueOf(rs.getString("status")), rs.getString("address"),
+                        rs.getString("contact_number"), at == null ? null : at.toLocalDateTime().toLocalDate()));
+            }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
+    }
+
+    @Override public void updateEnrolmentRecord(int enrolmentId, EnrolmentStatus status, String phone, String address) {
+        try (Connection c = Database.connect()) {
+            c.setAutoCommit(false);
+            try {
+                int applicantId;
+                try (PreparedStatement ps = c.prepareStatement("SELECT applicant_id FROM enrolment WHERE enrolment_id = ? FOR UPDATE")) {
+                    ps.setInt(1, enrolmentId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) throw new IllegalStateException("No enrolment found with ID " + enrolmentId);
+                        applicantId = rs.getInt(1);
+                    }
+                }
+                try (PreparedStatement ps = c.prepareStatement("UPDATE enrolment SET status = ? WHERE enrolment_id = ?")) {
+                    ps.setString(1, status.name()); ps.setInt(2, enrolmentId); ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement("UPDATE applicant SET contact_number = ?, address = ? WHERE applicant_id = ?")) {
+                    ps.setString(1, phone.isBlank() ? null : phone);
+                    ps.setString(2, address.isBlank() ? null : address);
+                    ps.setInt(3, applicantId); ps.executeUpdate();
+                }
+                c.commit();
+            } catch (SQLException | RuntimeException e) { c.rollback(); throw e; }
+        } catch (SQLException e) { throw new RuntimeException(e); }
     }
 }
