@@ -40,4 +40,27 @@ public interface CarrsRepository {
     void saveAppealDecision(AppealRecord appeal, Application application);
     /** Every appeal lodged so far, oldest first, with its documents. */
     List<AppealRecord> findAppeals();
+
+    // ---- Registration & Approval of programme applications
+    List<Programme> findAllProgrammes();
+    /** ATOMIC: save the new applicant, their application and an audit line together, or none. */
+    void createApplicantAndApplication(Applicant applicant, ProgrammeApplication application, StaffMember by);
+    List<ProgrammeApplication> findApplicationsByStatus(ApplicationStatus status);
+    /** ATOMIC: record an approval or rejection (with its audit line); fails if it was already decided. */
+    void decideApplication(int applicationId, ApplicationStatus decision, String rejectionReason, StaffMember by);
+
+
+    // ---- Enrolment Management
+    /** Every enrolment with the applicant and programme details filled in, newest first. */
+    List<EnrolmentRow> findEnrolmentRows();
+    /** Change an enrolment's status and the applicant's phone and address. */
+    void updateEnrolmentRecord(int enrolmentId, EnrolmentStatus status, String phone, String address);
+
+    // ---- Programme Management
+    /** Every programme with its dates and enrolled count. Also brings each dated programme's status up to date. */
+    List<ProgrammeDetails> findProgrammeDetails();
+    void addProgramme(String name, LocalDate startDate, LocalDate finishDate, int capacity);
+    void editProgramme(int programmeId, String name, LocalDate startDate, LocalDate finishDate, int capacity);
+    /** Fails with a clear message if the programme already has enrolments, applications or payments. */
+    void removeProgramme(int programmeId);
 }

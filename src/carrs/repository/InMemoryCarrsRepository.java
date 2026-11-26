@@ -120,4 +120,100 @@ public class InMemoryCarrsRepository implements CarrsRepository {
         applications.put(app.getId(), app);
     }
     @Override public List<AppealRecord> findAppeals() { return new ArrayList<>(appeals.values()); }
+
+    // ---- Registration & Approval of programme applications
+    private final Map<Integer, ProgrammeApplication> programmeApplications = new LinkedHashMap<>();
+    private int nextApplicantId = 1000;
+    private int nextProgrammeApplicationId = 1;
+
+    @Override public List<Programme> findAllProgrammes() { return new ArrayList<>(programmes.values()); }
+    @Override public void createApplicantAndApplication(Applicant a, ProgrammeApplication app, StaffMember by) {
+        if (failOnSave) throw new RuntimeException("database down");
+        Applicant saved = new Applicant(nextApplicantId++, a.getName());
+        applicants.put(saved.getId(), saved);
+        app.setId(nextProgrammeApplicationId++);
+        programmeApplications.put(app.getId(), app);
+    }
+    @Override public List<ProgrammeApplication> findApplicationsByStatus(ApplicationStatus status) {
+        List<ProgrammeApplication> out = new ArrayList<>();
+        for (ProgrammeApplication p : programmeApplications.values()) if (p.getStatus() == status) out.add(p);
+        return out;
+    }
+    @Override public void decideApplication(int applicationId, ApplicationStatus decision, String reason, StaffMember by) {
+        ProgrammeApplication p = programmeApplications.get(applicationId);
+        if (p == null || p.getStatus() != ApplicationStatus.COMPLETED)
+            throw new IllegalStateException("That application was not found or has already been decided.");
+        if (decision == ApplicationStatus.APPROVED) {
+            Programme prog = programmes.get(p.getProgrammeId());
+            if (prog != null && countLiveEnrolments(prog.getId()) >= prog.getCapacity())
+                throw new IllegalStateException("This programme is full, so the application cannot be approved.");
+        }
+        p.setStatus(decision);
+        p.setRejectionReason(decision == ApplicationStatus.REJECTED ? reason : null);
+        if (decision == ApplicationStatus.APPROVED) {
+            boolean already = false;
+            for (Enrolment e : enrolments.values())
+                if (e.getApplicantId() == p.getApplicantId() && e.getProgrammeId() == p.getProgrammeId() && e.isLive()) already = true;
+            if (!already) {
+                int id = enrolments.keySet().stream().max(Integer::compare).orElse(0) + 1;
+                enrolments.put(id, new Enrolment(id, p.getApplicantId(), p.getProgrammeId(), EnrolmentStatus.ACTIVE,
+                        java.time.LocalDateTime.now(), null));
+            }
+        }
+    }
+
+    @Override public List<EnrolmentRow> findEnrolmentRows() {
+        List<EnrolmentRow> out = new ArrayList<>();
+        for (Enrolment e : enrolments.values()) {
+            Applicant a = applicants.get(e.getApplicantId());
+            Programme pr = programmes.get(e.getProgrammeId());
+            out.add(new EnrolmentRow(e.getId(), e.getApplicantId(), e.getProgrammeId(),
+                    a == null ? "?" : a.getName(), a == null ? null : a.getDetail("trn"),
+                    pr == null ? "?" : pr.getName(), e.getStatus(), a == null ? null : a.getDetail("address"),
+                    a == null ? null : a.getDetail("contact_number"), e.getEnrolledAt().toLocalDate()));
+        }
+        java.util.Collections.reverse(out);
+        return out;
+    }
+
+    @Override public void updateEnrolmentRecord(int enrolmentId, EnrolmentStatus status, String phone, String address) {
+        Enrolment e = enrolments.get(enrolmentId);
+        if (e == null) throw new IllegalStateException("No enrolment found with ID " + enrolmentId);
+        e.setStatus(status);
+        Applicant a = applicants.get(e.getApplicantId());
+        if (a != null) { a.with("contact_number", phone); a.with("address", address); }
+    }
+
+    // ---- Programme Management (in memory)
+    private final Map<Integer, LocalDate[]> programmeDates = new HashMap<>();
+
+    @Override public List<ProgrammeDetails> findProgrammeDetails() {
+        List<ProgrammeDetails> out = new ArrayList<>();
+        for (Programme p : programmes.values()) {
+            LocalDate[] d = programmeDates.get(p.getId());
+            out.add(new ProgrammeDetails(p.getId(), p.getName(), d == null ? null : d[0], d == null ? null : d[1],
+                    p.getCapacity(), countLiveEnrolments(p.getId()), p.getStatus()));
+        }
+        return out;
+    }
+    private static ProgrammeStatus statusOf(LocalDate s, LocalDate f) { return ProgrammeDetails.statusFor(s, f, LocalDate.now()); }
+    @Override public void addProgramme(String name, LocalDate start, LocalDate finish, int capacity) {
+        for (Programme p : programmes.values())
+            if (p.getName().equalsIgnoreCase(name)) throw new IllegalStateException("A programme called \"" + name + "\" already exists.");
+        int id = programmes.keySet().stream().max(Integer::compare).orElse(0) + 1;
+        programmes.put(id, new Programme(id, name, statusOf(start, finish), capacity));
+        programmeDates.put(id, new LocalDate[]{start, finish});
+    }
+    @Override public void editProgramme(int id, String name, LocalDate start, LocalDate finish, int capacity) {
+        if (!programmes.containsKey(id)) throw new IllegalStateException("That programme no longer exists.");
+        for (Programme p : programmes.values())
+            if (p.getId() != id && p.getName().equalsIgnoreCase(name)) throw new IllegalStateException("A programme called \"" + name + "\" already exists.");
+        programmes.put(id, new Programme(id, name, statusOf(start, finish), capacity));
+        programmeDates.put(id, new LocalDate[]{start, finish});
+    }
+    @Override public void removeProgramme(int id) {
+        if (countLiveEnrolments(id) > 0)
+            throw new IllegalStateException("This programme already has enrolments, so it cannot be deleted.");
+        programmes.remove(id); programmeDates.remove(id);
+    }
 }

@@ -3,6 +3,7 @@ package carrs.app;
 import carrs.model.StaffMember;
 import carrs.repository.CarrsRepository;
 import carrs.repository.MySqlCarrsRepository;
+
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -73,9 +74,8 @@ public class CarrsApp extends JFrame {
      * Example: features.add(new RegisterApplicantTab(repo));
      */
     private void registerTabs() {
-        features.add(new PlaceholderTab("Register Applicant", "Justin Bent",
-                "FTR-GOV-004 Program Administration and Approval"));
-        features.add(new PlaceholderTab("Programme Management", "Gareth Chambers", "FTR-GOV-005 Program Management"));
+        features.add(new ProgrammeTab(repo));   // Programme Management: Gareth Chambers
+        features.add(new RegisterApplicantTab(repo));   // also shows the Approve Applications table
         features.add(new EnrolmentManagementTab(repo)); //Enrollment Managment: Latania johnson
         features.add(new AppealsDisputesTab(repo));
         features.add(new ReportTab(repo));

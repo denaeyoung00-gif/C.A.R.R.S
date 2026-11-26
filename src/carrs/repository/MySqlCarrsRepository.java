@@ -410,4 +410,281 @@ public class MySqlCarrsRepository implements CarrsRepository {
     private static void setInteger(PreparedStatement ps, int i, Integer v) throws SQLException {
         if (v == null) ps.setNull(i, Types.INTEGER); else ps.setInt(i, v);
     }
+
+    // ============ Registration & Approval of programme applications ============
+    @Override public List<Programme> findAllProgrammes() {
+        List<Programme> out = new ArrayList<>();
+        try (Connection c = Database.connect(); Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT * FROM programme ORDER BY name")) {
+            while (rs.next()) out.add(toProgramme(rs));
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
+    }
+
+    @Override public void createApplicantAndApplication(Applicant a, ProgrammeApplication app, StaffMember by) {
+        try (Connection c = Database.connect()) {
+            c.setAutoCommit(false);
+            try {
+                int applicantId;
+                String idType = a.getDetail("id_type"), idNumber = a.getDetail("id_number");
+                String trn = ("TRN".equals(idType) && idNumber != null && idNumber.length() <= 9) ? idNumber : null;
+                try (PreparedStatement ps = c.prepareStatement("INSERT INTO applicant (name, household_size, "
+                        + "contact_number, trn, id_type, id_number, date_of_birth, address, employment_status, "
+                        + "monthly_income, dependents) VALUES (?,?,?,?,?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                    ps.setString(1, a.getName());
+                    ps.setString(2, a.getDetail("household_size"));
+                    ps.setString(3, a.getDetail("contact_number"));
+                    ps.setString(4, trn);
+                    ps.setString(5, idType);
+                    ps.setString(6, idNumber);
+                    String dob = a.getDetail("date_of_birth");
+                    if (dob == null || dob.isBlank()) ps.setNull(7, Types.DATE); else ps.setDate(7, java.sql.Date.valueOf(dob));
+                    ps.setString(8, a.getDetail("address"));
+                    ps.setString(9, a.getDetail("employment_status"));
+                    String inc = a.getDetail("monthly_income");
+                    ps.setBigDecimal(10, new java.math.BigDecimal(inc == null || inc.isBlank() ? "0" : inc));
+                    String dep = a.getDetail("dependents");
+                    ps.setInt(11, Integer.parseInt(dep == null || dep.isBlank() ? "0" : dep));
+                    ps.executeUpdate();
+                    try (ResultSet keys = ps.getGeneratedKeys()) { keys.next(); applicantId = keys.getInt(1); }
+                }
+                int applicationId;
+                try (PreparedStatement ps = c.prepareStatement("INSERT INTO programme_application (reference_no, "
+                        + "applicant_id, programme_id, assistance_requested, reason_for_applying, status, created_by, "
+                        + "supporting_doc_path) VALUES (?,?,?,?,?,?,?,?)", Statement.RETURN_GENERATED_KEYS)) {
+                    ps.setString(1, app.getReferenceNo()); ps.setInt(2, applicantId); ps.setInt(3, app.getProgrammeId());
+                    ps.setString(4, app.getAssistanceRequested()); ps.setString(5, app.getReasonForApplying());
+                    ps.setString(6, app.getStatus().name()); ps.setInt(7, by.getId());
+                    String doc = app.getSupportingDocPath();
+                    ps.setString(8, doc == null || doc.isBlank() ? null : doc);
+                    ps.executeUpdate();
+                    try (ResultSet keys = ps.getGeneratedKeys()) { keys.next(); applicationId = keys.getInt(1); }
+                }
+                app.setId(applicationId);
+                applicationAudit(c, applicationId, app.getProgrammeId(), "SUBMITTED",
+                        "Application " + app.getReferenceNo() + " submitted for " + a.getName(), by.getId());
+                c.commit();
+            } catch (SQLException | RuntimeException e) { c.rollback(); throw e; }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    @Override public List<ProgrammeApplication> findApplicationsByStatus(ApplicationStatus status) {
+        List<ProgrammeApplication> out = new ArrayList<>();
+        try (Connection c = Database.connect(); PreparedStatement ps = c.prepareStatement(
+                "SELECT * FROM programme_application WHERE status = ? ORDER BY created_at, application_id")) {
+            ps.setString(1, status.name());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    int by = rs.getInt("decided_by");
+                    Integer decidedBy = rs.wasNull() ? null : by;
+                    Timestamp decidedAt = rs.getTimestamp("decided_at");
+                    Timestamp createdAt = rs.getTimestamp("created_at");
+                    out.add(new ProgrammeApplication(rs.getInt("application_id"), rs.getString("reference_no"),
+                            rs.getInt("applicant_id"), rs.getInt("programme_id"), rs.getString("assistance_requested"),
+                            rs.getString("reason_for_applying"), ApplicationStatus.valueOf(rs.getString("status")),
+                            rs.getString("rejection_reason"), decidedBy,
+                            decidedAt == null ? null : decidedAt.toLocalDateTime(), rs.getInt("created_by"),
+                            createdAt == null ? null : createdAt.toLocalDateTime(), rs.getString("supporting_doc_path")));
+                }
+            }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
+    }
+
+    @Override public void decideApplication(int applicationId, ApplicationStatus decision, String reason, StaffMember by) {
+        try (Connection c = Database.connect()) {
+            c.setAutoCommit(false);
+            try {
+                int programmeId, applicantId;
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT programme_id, applicant_id FROM programme_application WHERE application_id = ? AND status = 'COMPLETED' FOR UPDATE")) {
+                    ps.setInt(1, applicationId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) throw new IllegalStateException("That application was not found or has already been decided.");
+                        programmeId = rs.getInt(1);
+                        applicantId = rs.getInt(2);
+                    }
+                }
+                if (decision == ApplicationStatus.APPROVED) {
+                    try (PreparedStatement ps = c.prepareStatement("SELECT p.capacity, (SELECT COUNT(*) FROM enrolment e "
+                            + "WHERE e.programme_id = p.programme_id AND e.status IN ('ACTIVE','ON_HOLD')) FROM programme p "
+                            + "WHERE p.programme_id = ? FOR UPDATE")) {
+                        ps.setInt(1, programmeId);
+                        try (ResultSet rs = ps.executeQuery()) {
+                            if (rs.next() && rs.getInt(2) >= rs.getInt(1))
+                                throw new IllegalStateException("This programme is full, so the application cannot be approved.");
+                        }
+                    }
+                }
+                try (PreparedStatement ps = c.prepareStatement("UPDATE programme_application SET status = ?, "
+                        + "rejection_reason = ?, decided_by = ?, decided_at = NOW() WHERE application_id = ?")) {
+                    ps.setString(1, decision.name());
+                    ps.setString(2, decision == ApplicationStatus.REJECTED ? reason : null);
+                    ps.setInt(3, by.getId()); ps.setInt(4, applicationId);
+                    ps.executeUpdate();
+                }
+                // also record the decision where the Appeals & Disputes tab reads it from
+                try (PreparedStatement ps = c.prepareStatement("INSERT INTO application "
+                        + "(applicant_id, programme_id, status, decision_date) VALUES (?,?,?,NOW())")) {
+                    ps.setInt(1, applicantId); ps.setInt(2, programmeId);
+                    ps.setString(3, decision == ApplicationStatus.REJECTED ? "Rejected" : "Approved");
+                    ps.executeUpdate();
+                }
+                if (decision == ApplicationStatus.APPROVED) {
+                    // an approved application becomes a live enrolment (unless the person is already enrolled)
+                    try (PreparedStatement ps = c.prepareStatement("INSERT INTO enrolment (applicant_id, programme_id, status, enrolled_at) "
+                            + "SELECT ?, ?, 'ACTIVE', NOW() FROM DUAL WHERE NOT EXISTS (SELECT 1 FROM enrolment "
+                            + "WHERE applicant_id = ? AND programme_id = ? AND status IN ('ACTIVE','ON_HOLD'))")) {
+                        ps.setInt(1, applicantId); ps.setInt(2, programmeId);
+                        ps.setInt(3, applicantId); ps.setInt(4, programmeId);
+                        ps.executeUpdate();
+                    }
+                }
+                applicationAudit(c, applicationId, programmeId, decision.name(),
+                        decision == ApplicationStatus.REJECTED ? "Rejected: " + reason : "Approved", by.getId());
+                c.commit();
+            } catch (SQLException | RuntimeException e) { c.rollback(); throw e; }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    private void applicationAudit(Connection c, int applicationId, int programmeId, String action,
+                                  String details, int staffId) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("INSERT INTO programme_application_audit "
+                + "(application_id, programme_id, action, details, performed_by) VALUES (?,?,?,?,?)")) {
+            ps.setInt(1, applicationId); ps.setInt(2, programmeId); ps.setString(3, action);
+            ps.setString(4, details); ps.setInt(5, staffId);
+            ps.executeUpdate();
+        }
+    }
+
+    // ============ Enrolment Management ============
+    @Override public List<EnrolmentRow> findEnrolmentRows() {
+        String sql = "SELECT e.enrolment_id, e.applicant_id, e.programme_id, a.name, a.trn, p.name AS programme_name, "
+                + "e.status, a.address, a.contact_number, e.enrolled_at FROM enrolment e "
+                + "JOIN applicant a ON a.applicant_id = e.applicant_id "
+                + "JOIN programme p ON p.programme_id = e.programme_id ORDER BY e.enrolment_id DESC";
+        List<EnrolmentRow> out = new ArrayList<>();
+        try (Connection c = Database.connect(); Statement st = c.createStatement(); ResultSet rs = st.executeQuery(sql)) {
+            while (rs.next()) {
+                Timestamp at = rs.getTimestamp("enrolled_at");
+                out.add(new EnrolmentRow(rs.getInt("enrolment_id"), rs.getInt("applicant_id"), rs.getInt("programme_id"),
+                        rs.getString("name"), rs.getString("trn"), rs.getString("programme_name"),
+                        EnrolmentStatus.valueOf(rs.getString("status")), rs.getString("address"),
+                        rs.getString("contact_number"), at == null ? null : at.toLocalDateTime().toLocalDate()));
+            }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
+    }
+
+    @Override public void updateEnrolmentRecord(int enrolmentId, EnrolmentStatus status, String phone, String address) {
+        try (Connection c = Database.connect()) {
+            c.setAutoCommit(false);
+            try {
+                int applicantId;
+                try (PreparedStatement ps = c.prepareStatement("SELECT applicant_id FROM enrolment WHERE enrolment_id = ? FOR UPDATE")) {
+                    ps.setInt(1, enrolmentId);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        if (!rs.next()) throw new IllegalStateException("No enrolment found with ID " + enrolmentId);
+                        applicantId = rs.getInt(1);
+                    }
+                }
+                try (PreparedStatement ps = c.prepareStatement("UPDATE enrolment SET status = ? WHERE enrolment_id = ?")) {
+                    ps.setString(1, status.name()); ps.setInt(2, enrolmentId); ps.executeUpdate();
+                }
+                try (PreparedStatement ps = c.prepareStatement("UPDATE applicant SET contact_number = ?, address = ? WHERE applicant_id = ?")) {
+                    ps.setString(1, phone.isBlank() ? null : phone);
+                    ps.setString(2, address.isBlank() ? null : address);
+                    ps.setInt(3, applicantId); ps.executeUpdate();
+                }
+                c.commit();
+            } catch (SQLException | RuntimeException e) { c.rollback(); throw e; }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    // ============ Programme Management ============
+    /** The programme table originally had no dates. Add the two columns the first time they are needed. */
+    private void ensureProgrammeDates(Connection c) throws SQLException {
+        try (PreparedStatement ps = c.prepareStatement("SELECT COUNT(*) FROM information_schema.columns "
+                + "WHERE table_schema = DATABASE() AND table_name = 'programme' AND column_name = 'start_date'");
+             ResultSet rs = ps.executeQuery()) {
+            rs.next();
+            if (rs.getInt(1) == 0) {
+                try (Statement st = c.createStatement()) {
+                    st.executeUpdate("ALTER TABLE programme ADD COLUMN start_date DATE NULL, ADD COLUMN finish_date DATE NULL");
+                }
+            }
+        }
+    }
+
+    @Override public List<ProgrammeDetails> findProgrammeDetails() {
+        List<ProgrammeDetails> out = new ArrayList<>();
+        try (Connection c = Database.connect()) {
+            ensureProgrammeDates(c);
+            // keep the stored status in step with the dates, so Register Applicant and Payments agree with this screen
+            try (Statement st = c.createStatement()) {
+                st.executeUpdate("UPDATE programme SET status = CASE WHEN CURDATE() < start_date THEN 'UPCOMING' "
+                        + "WHEN CURDATE() > finish_date THEN 'COMPLETED' ELSE 'ACTIVE' END "
+                        + "WHERE start_date IS NOT NULL AND finish_date IS NOT NULL");
+            }
+            String sql = "SELECT p.programme_id, p.name, p.start_date, p.finish_date, p.capacity, p.status, "
+                    + "(SELECT COUNT(*) FROM enrolment e WHERE e.programme_id = p.programme_id "
+                    + "AND e.status IN ('ACTIVE','ON_HOLD')) AS enrolled FROM programme p ORDER BY p.name";
+            try (Statement st = c.createStatement(); ResultSet rs = st.executeQuery(sql)) {
+                while (rs.next()) {
+                    java.sql.Date sd = rs.getDate("start_date"), fd = rs.getDate("finish_date");
+                    out.add(new ProgrammeDetails(rs.getInt("programme_id"), rs.getString("name"),
+                            sd == null ? null : sd.toLocalDate(), fd == null ? null : fd.toLocalDate(),
+                            rs.getInt("capacity"), rs.getInt("enrolled"),
+                            ProgrammeStatus.valueOf(rs.getString("status"))));
+                }
+            }
+        } catch (SQLException e) { throw new RuntimeException(e); }
+        return out;
+    }
+
+    @Override public void addProgramme(String name, LocalDate start, LocalDate finish, int capacity) {
+        try (Connection c = Database.connect()) {
+            ensureProgrammeDates(c);
+            try (PreparedStatement ps = c.prepareStatement("INSERT INTO programme (name, status, capacity, required_fields, "
+                    + "provides_benefits, start_date, finish_date) VALUES (?,?,?,'',TRUE,?,?)")) {
+                ps.setString(1, name);
+                ps.setString(2, ProgrammeDetails.statusFor(start, finish, LocalDate.now()).name());
+                ps.setInt(3, capacity);
+                ps.setDate(4, java.sql.Date.valueOf(start));
+                ps.setDate(5, java.sql.Date.valueOf(finish));
+                ps.executeUpdate();
+            }
+        } catch (SQLIntegrityConstraintViolationException e) {
+            throw new IllegalStateException("A programme called \"" + name + "\" already exists.");
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    @Override public void editProgramme(int id, String name, LocalDate start, LocalDate finish, int capacity) {
+        try (Connection c = Database.connect()) {
+            ensureProgrammeDates(c);
+            try (PreparedStatement ps = c.prepareStatement("UPDATE programme SET name = ?, status = ?, capacity = ?, "
+                    + "start_date = ?, finish_date = ? WHERE programme_id = ?")) {
+                ps.setString(1, name);
+                ps.setString(2, ProgrammeDetails.statusFor(start, finish, LocalDate.now()).name());
+                ps.setInt(3, capacity);
+                ps.setDate(4, java.sql.Date.valueOf(start));
+                ps.setDate(5, java.sql.Date.valueOf(finish));
+                ps.setInt(6, id);
+                if (ps.executeUpdate() == 0) throw new IllegalStateException("That programme no longer exists.");
+            }
+        } catch (SQLIntegrityConstraintViolationException e) {
+            throw new IllegalStateException("A programme called \"" + name + "\" already exists.");
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
+
+    @Override public void removeProgramme(int id) {
+        try (Connection c = Database.connect();
+             PreparedStatement ps = c.prepareStatement("DELETE FROM programme WHERE programme_id = ?")) {
+            ps.setInt(1, id);
+            if (ps.executeUpdate() == 0) throw new IllegalStateException("That programme no longer exists.");
+        } catch (SQLIntegrityConstraintViolationException e) {
+            throw new IllegalStateException("This programme already has enrolments, applications or payments, so it "
+                    + "cannot be deleted. Change its finish date to close it instead.");
+        } catch (SQLException e) { throw new RuntimeException(e); }
+    }
 }
