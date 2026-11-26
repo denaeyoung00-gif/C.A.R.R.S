@@ -11,6 +11,13 @@ INSERT INTO staff_member (staff_id, name, role) VALUES
                                                     (5,'Marcus Reid','OFFICE_STAFF'),
                                                     (6,'Keisha Palmer','OFFICE_ATTENDANT');
 
+INSERT INTO programme (programme_id, name, start_date, finish_date, capacity, status, provides_benefits) VALUES
+ (1,'Tertiary Scholarship / Education Grant',2026-11-30, 2027-01-02, 40,'ACTIVE',1),
+ (2,'Seasonal Agricultural Workers Programme (SAWP)','ACTIVE',40,'',1),
+ (3,'Emergency Assistance / Compassionate Grant','ACTIVE',40,'',1),
+ (4,'Constituency Summer Employment Programme (SEP)','ACTIVE',40,'',1),
+ (5,'Community Skills Workshops (no stipend)','ACTIVE',40,'',0),
+ (6,'Back-to-School Grant 2027','UPCOMING',40,'',1);
 INSERT INTO programme (programme_id, name, status, capacity, required_fields, provides_benefits) VALUES
                                                                                                      (1,'Tertiary Scholarship / Education Grant','ACTIVE',40,'',1),
                                                                                                      (2,'Seasonal Agricultural Workers Programme (SAWP)','ACTIVE',40,'',1),
