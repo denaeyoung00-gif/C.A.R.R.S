@@ -15,7 +15,7 @@ public class InMemoryCarrsRepository implements CarrsRepository {
     private int nextPaymentId = 1;
     private int nextAuditId = 1;
     private int nextChangeId = 1;
-    public boolean failOnSave = false;
+    public boolean failOnSave = false;   // lets a test simulate a database crash
 
     private final List<StaffMember> staffList = new ArrayList<>();
     public void add(StaffMember s) { staffList.add(s); }
@@ -105,6 +105,7 @@ public class InMemoryCarrsRepository implements CarrsRepository {
         return out;
     }
 
+<<<<<<< HEAD
     @Override
     public List<Application> findApplications() {
         return List.of();
@@ -124,4 +125,21 @@ public class InMemoryCarrsRepository implements CarrsRepository {
     public List<AppealRecord> findAppeals() {
         return List.of();
     }
+=======
+    // ---- Appeals & Disputes (in memory, for tests)
+    private final Map<Integer, Application> applications = new LinkedHashMap<>();
+    private final Map<String, AppealRecord> appeals = new LinkedHashMap<>();
+    public void add(Application a) { applications.put(a.getId(), a); }
+    @Override public List<Application> findApplications() { return new ArrayList<>(applications.values()); }
+    @Override public void saveAppeal(AppealRecord a) {
+        appeals.put(a.getCadn(), a);
+        Application app = applications.get(a.getApplicationId());
+        if (app != null) app.setLocked(true);
+    }
+    @Override public void saveAppealDecision(AppealRecord a, Application app) {
+        appeals.put(a.getCadn(), a);
+        applications.put(app.getId(), app);
+    }
+    @Override public List<AppealRecord> findAppeals() { return new ArrayList<>(appeals.values()); }
+>>>>>>> 942262f303535ddd0cbba18e1efc755dec41a203
 }

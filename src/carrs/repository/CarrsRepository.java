@@ -31,6 +31,7 @@ public interface CarrsRepository {
     List<Payment> findCompletedPaymentsBetween(LocalDate from, LocalDate to);
     List<PaymentChange> findPaymentChanges(int paymentId);
 
+<<<<<<< HEAD
     // ============ Appeals & Disputes ============
     List<Application> findApplications();
 
@@ -50,4 +51,15 @@ public interface CarrsRepository {
 //    boolean deleteProgramme(int programmeId);
 //    /** All programmes, ordered by id. */
 //    List<Programme> findAllProgrammes();
+=======
+    // ---- Appeals & Disputes
+    /** Every application that has a decision, with the applicant and programme names filled in. */
+    List<Application> findApplications();
+    /** ATOMIC: save the new appeal (with its documents) and lock its application, or neither. */
+    void saveAppeal(AppealRecord appeal);
+    /** ATOMIC: save the appeal's decision and the application changes it caused, or neither. */
+    void saveAppealDecision(AppealRecord appeal, Application application);
+    /** Every appeal lodged so far, oldest first, with its documents. */
+    List<AppealRecord> findAppeals();
+>>>>>>> 942262f303535ddd0cbba18e1efc755dec41a203
 }
