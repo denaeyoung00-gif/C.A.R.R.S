@@ -259,7 +259,8 @@ public class MySqlCarrsRepository implements CarrsRepository {
     }
 
     // ============ Appeals & Disputes ============
-    @Override public List<Application> findApplications() {
+    @Override
+    public List<Application> findApplications() {
         String sql = "SELECT a.*, ap.name AS applicant_name, pr.name AS programme_name FROM application a "
                 + "JOIN applicant ap ON ap.applicant_id = a.applicant_id "
                 + "JOIN programme pr ON pr.programme_id = a.programme_id ORDER BY a.application_id";
@@ -277,7 +278,8 @@ public class MySqlCarrsRepository implements CarrsRepository {
         return out;
     }
 
-    @Override public void saveAppeal(AppealRecord a) {
+    @Override
+    public void saveAppeal(AppealRecord a) {
         try (Connection c = Database.connect()) {
             c.setAutoCommit(false);
             try {
@@ -308,7 +310,8 @@ public class MySqlCarrsRepository implements CarrsRepository {
         } catch (SQLException e) { throw new RuntimeException(e); }
     }
 
-    @Override public void saveAppealDecision(AppealRecord a, Application app) {
+    @Override
+    public void saveAppealDecision(AppealRecord a, Application app) {
         try (Connection c = Database.connect()) {
             c.setAutoCommit(false);
             try {
@@ -332,7 +335,8 @@ public class MySqlCarrsRepository implements CarrsRepository {
         } catch (SQLException e) { throw new RuntimeException(e); }
     }
 
-    @Override public List<AppealRecord> findAppeals() {
+    @Override
+    public List<AppealRecord> findAppeals() {
         List<AppealRecord> out = new ArrayList<>();
         Map<String, AppealRecord> byCadn = new HashMap<>();
         try (Connection c = Database.connect(); Statement st = c.createStatement()) {

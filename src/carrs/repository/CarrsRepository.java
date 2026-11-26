@@ -31,6 +31,15 @@ public interface CarrsRepository {
     List<Payment> findCompletedPaymentsBetween(LocalDate from, LocalDate to);
     List<PaymentChange> findPaymentChanges(int paymentId);
 
+    // ============ Appeals & Disputes ============
+    List<Application> findApplications();
+
+    void saveAppeal(AppealRecord a);
+
+    void saveAppealDecision(AppealRecord a, Application app);
+
+    List<AppealRecord> findAppeals();
+
 
 //     // ---- Programme Management
 //    /** Saves a new programme and returns it with the id the database assigned. */

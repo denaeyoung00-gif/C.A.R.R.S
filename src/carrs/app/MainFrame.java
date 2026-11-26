@@ -1,5 +1,8 @@
+package carrs.app;
+
 import java.awt.*;
 import javax.swing.*;
+import javax.swing.JFrame;
 
 public class MainFrame extends JFrame {
     private final ProgramRepository repo;
@@ -7,7 +10,7 @@ public class MainFrame extends JFrame {
     private final ProgrammeListPanel listPanel;
 
     public MainFrame(ProgramRepository repo, ProgramManagementService service) {
-        this.repo = repo;
+        this.repo=repo;
         this.service = service;
 
         setTitle("Programme Management");
@@ -31,7 +34,7 @@ public class MainFrame extends JFrame {
 
         // list
         listPanel = new ProgrammeListPanel(repo, service);
-        JScrollPane scroll = new JScrollPane(listPanel);
+        JScrollPane scroll = new JScrollPane();
         scroll.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
         add(scroll, BorderLayout.CENTER);
 

@@ -104,4 +104,24 @@ public class InMemoryCarrsRepository implements CarrsRepository {
         for (PaymentChange c : changes) if (c.getPaymentId() == paymentId) out.add(c);
         return out;
     }
+
+    @Override
+    public List<Application> findApplications() {
+        return List.of();
+    }
+
+    @Override
+    public void saveAppeal(AppealRecord a) {
+
+    }
+
+    @Override
+    public void saveAppealDecision(AppealRecord a, Application app) {
+
+    }
+
+    @Override
+    public List<AppealRecord> findAppeals() {
+        return List.of();
+    }
 }
