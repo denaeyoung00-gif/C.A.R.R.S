@@ -15,7 +15,7 @@ ALTER TABLE applicant
   ADD COLUMN monthly_income DECIMAL(12,2) NULL,
   ADD COLUMN dependents INT NULL;
 
--- 2. Create your own separate APPLICATION table
+-- 2. Create separate APPLICATION table
 CREATE TABLE IF NOT EXISTS programme_application (
                                                      application_id       INT PRIMARY KEY AUTO_INCREMENT,
                                                      reference_no         VARCHAR(20) NOT NULL UNIQUE,
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS programme_application (
     FOREIGN KEY (created_by) REFERENCES staff_member(staff_id)
     );
 
--- 3. Create your own AUDIT table
+-- 3. Create separate AUDIT table
 CREATE TABLE IF NOT EXISTS programme_application_audit (
                                                            audit_id       INT PRIMARY KEY AUTO_INCREMENT,
                                                            application_id INT NULL,
